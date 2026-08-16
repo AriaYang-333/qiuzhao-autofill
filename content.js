@@ -1581,15 +1581,21 @@ function rfaWaitVisible() {
   try { rfaLog({ act: "paused-hidden", why: "tab-backgrounded-timer-throttling" }); } catch (e) {}
   rfaShowPauseTip(true);
   return new Promise((res) => {
-    const h = () => {
-      if (!document.hidden) {
-        document.removeEventListener("visibilitychange", h);
-        rfaShowPauseTip(false);
-        try { rfaLog({ act: "resumed-visible" }); } catch (e) {}
-        res();
-      }
+    let done = false;
+    const finish = () => {
+      if (done) return; done = true;
+      try { document.removeEventListener("visibilitychange", h); } catch (e) {}
+      rfaShowPauseTip(false);
+      try { rfaLog({ act: "resumed-visible" }); } catch (e) {}
+      res();
     };
+    const h = () => { if (!document.hidden) finish(); };
     document.addEventListener("visibilitychange", h);
+    // v0.8.20（夜晚自治）：后台/锁屏标签 document.hidden=true 时不再无限挂起。
+    // 原实现只在 visibilitychange→visible 时才 resolve，若显示器睡眠/窗口在后台，
+    // 填充会永远卡在 sleep() 里——实名导致「用户睡后自治」整段失效。
+    // 兜底：最多等 10s 后继续填（直接 DOM 操作不依赖动画，后台也能填）。
+    setTimeout(finish, 10000);
   });
 }
 const sleep = (ms) => {
@@ -2861,6 +2867,34 @@ async function jdFillRadio(box, value) {
   rfaLog({ act: "jd-radio-ok", val: valStr });
   return true;
 }
+// 读取级联选项文本：antd v3 的 li 同时带 title 与内部文本，优先取非空者
+function cascItemText(o) {
+  try {
+    var t = o.getAttribute("title");
+    if (t && t.trim()) return t.trim();
+    t = (o.innerText || "").trim();
+    if (t) return t;
+    if (typeof getText === "function") { t = getText(o); if (t && t.trim()) return t.trim(); }
+  } catch (e) {}
+  return "";
+}
+// 京东一页有多个级联（籍贯/专业类别/所在城市），document.querySelector 取到的可能是
+// 别的字段的面板。改取「可见且含有效选项文本」的那一个。
+function visibleCascMenu() {
+  var all = Array.from(document.querySelectorAll(".ant-cascader-menus"));
+  for (var i = 0; i < all.length; i++) {
+    var m = all[i];
+    try {
+      var s = getComputedStyle(m);
+      if (s.display === "none" || s.visibility === "hidden" || s.opacity === "0") continue;
+      var r = m.getBoundingClientRect();
+      if (r.width <= 0 || r.height <= 0) continue;
+    } catch (e) { continue; }
+    var lis = Array.from(m.querySelectorAll(".ant-cascader-menu li"));
+    if (lis.some(function (o) { return cascItemText(o); })) return m;
+  }
+  return null;
+}
 async function jdFillCascader(el, value, field) {
   const valStr = String(value || "").trim();
   if (!valStr) return false;
@@ -2875,33 +2909,28 @@ async function jdFillCascader(el, value, field) {
   ["mousedown", "mouseup", "click"].forEach(function (t) {
     try { picker.dispatchEvent(new MouseEvent(t, { bubbles: true, cancelable: true, clientX: x, clientY: y, view: window })); } catch (e) {}
   });
-  await sleep(700);
-  let menu = document.querySelector(".ant-cascader-menus");
-  if (!menu) {
-    try { const inp = picker.querySelector("input"); if (inp) { inp.focus(); inp.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", bubbles: true })); } } catch (e) {}
-    await sleep(500);
-    menu = document.querySelector(".ant-cascader-menus");
-  }
+  // 轮询「可见且含文本选项」的面板（京东多级联同存，不能取 DOM 中第一个）
+  let menu = null;
+  for (let _p = 0; _p < 12 && !menu; _p++) { await sleep(250); menu = visibleCascMenu(); }
   if (!menu) { rfaLog({ act: "jd-cascader-no-panel", label: (field && field.label) || "", val: valStr }); return false; }
   const segs = splitCnAddress(valStr);
   for (let s = 0; s < segs.length; s++) {
-    const cols = Array.from(menu.querySelectorAll(".ant-cascader-menu"));
-    const col = cols[cols.length - 1];
+    let col = null;
+    for (let _c = 0; _c < 8 && !col; _c++) {
+      const cols = Array.from(menu.querySelectorAll(".ant-cascader-menu"));
+      col = cols[cols.length - 1];
+      if (!col) { await sleep(200); continue; }
+      const have = Array.from(col.querySelectorAll("li")).filter(function (o) { return cascItemText(o) && o.offsetWidth > 0; });
+      if (!have.length) { col = null; await sleep(200); }
+    }
     if (!col) break;
-    const items = Array.from(col.querySelectorAll("li")).filter(function (o) { return o.offsetWidth > 0; });
     const seg = segs[s];
-    const hit = items.find(function (o) { return (o.getAttribute("title") || o.innerText || "").trim() === seg; }) ||
-                items.find(function (o) { return (o.innerText || "").trim().indexOf(seg) >= 0; });
-    if (!hit) break;
+    const items = Array.from(col.querySelectorAll("li")).filter(function (o) { return o.offsetWidth > 0; });
+    const hit = items.find(function (o) { return cascItemText(o) === seg; }) ||
+                items.find(function (o) { return cascItemText(o).indexOf(seg) >= 0; });
+    if (!hit) { rfaLog({ act: "jd-cascader-miss", label: (field && field.label) || "", seg: seg }); break; }
     simulateClick(hit);
-    await sleep(500);
-  }
-  const menu2 = document.querySelector(".ant-cascader-menus");
-  if (menu2) {
-    const cols2 = Array.from(menu2.querySelectorAll(".ant-cascader-menu"));
-    const col2 = cols2[cols2.length - 1];
-    const last = col2 ? Array.from(col2.querySelectorAll("li")).filter(function (o) { return o.offsetWidth > 0; })[0] : null;
-    if (last) { simulateClick(last); await sleep(300); }
+    await sleep(450);
   }
   try { document.body.click(); } catch (e) {}
   rfaLog({ act: "jd-cascader-ok", label: (field && field.label) || "", val: valStr });
@@ -11118,7 +11147,7 @@ document.addEventListener("__RFA_SETSTORAGE__", function (e) {
 // 构建戳：CDP 可直接读 document.documentElement.dataset.rfaBuild，
 // 用来确认「页面上跑的到底是不是我刚改的这版 content.js」。
 // 之前多次出现「改完码没重载扩展、对着旧码调了半天」的浪费，加这一行成本极低。
-try { document.documentElement.dataset.rfaBuild = "20260815-pf5"; } catch (e) {}
+try { document.documentElement.dataset.rfaBuild = "20260816-jdcasc1"; } catch (e) {}
 
 // ============ 百度抓取模式（读优先，不依赖 CDP 读页面） ============
 // 百度 ATS 检测到 CDP Runtime.enable 会自毁 about:blank，所以不能用 CDP 读。

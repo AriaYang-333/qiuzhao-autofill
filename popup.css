@@ -89,6 +89,16 @@ body {
   cursor: pointer; transition: background .15s;
 }
 .btn-close:hover { background: rgba(255,255,255,.28); }
+.btn-web {
+  display: inline-flex; align-items: center; gap: 3px;
+  background: rgba(255,255,255,.18); border: 1px solid rgba(255,255,255,.38);
+  color: #fff; font-size: 11.5px; font-weight: 500; line-height: 1;
+  padding: 5px 11px; border-radius: var(--radius-pill);
+  text-decoration: none; cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s;
+}
+.btn-web:hover { background: rgba(255,255,255,.32); border-color: rgba(255,255,255,.55); color: #fff; }
+.btn-web:active { transform: translateY(1px); }
 
 /* ============ 通用按钮 ============ */
 .btn {
@@ -365,6 +375,11 @@ textarea { width: 100%; resize: vertical; min-height: 60px; font-family: inherit
 .skill-chip button { border: none; background: none; color: var(--c-primary); cursor: pointer; font-size: 15px; line-height: 1; padding: 0; }
 .skill-input { border: 1px dashed var(--c-border-strong); background: var(--c-surface-2); color: var(--c-text); border-radius: 999px; padding: 5px 12px; font-size: 12.5px; font-family: inherit; min-width: 150px; outline: none; }
 .skill-input:focus { border-color: var(--c-primary); }
+/* 预设常用项：点一下直接加标签，降低"该填什么"的混淆 */
+.sug-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 8px; }
+.sug-label { font-size: 12px; color: var(--c-text); opacity: .6; }
+.sug-chip { border: 1px dashed var(--c-border-strong); background: var(--c-surface-2); color: var(--c-text); border-radius: 999px; padding: 4px 10px; font-size: 12px; font-family: inherit; cursor: pointer; line-height: 1; }
+.sug-chip:hover { border-color: var(--c-primary); color: var(--c-primary); background: var(--c-primary-soft); }
 
 /* 证书 / 专利 文件上传控件 */
 .file-widget { display: flex; flex-direction: column; gap: 6px; }
@@ -377,6 +392,15 @@ textarea { width: 100%; resize: vertical; min-height: 60px; font-family: inherit
 .other-input { margin-top: 6px; }
 .ai-grid { display: flex; flex-direction: column; gap: 10px; }
 .field-row.full { grid-column: 1 / -1; }
+/* 社交账号：平台 / 账号 / 链接 三个字段并排成一条水平线（2026-08-16 用户要求） */
+#socialEditor .edit-card .field-row {
+  display: inline-block;
+  width: calc(33.333% - 10px);
+  margin-right: 10px;
+  margin-bottom: 8px;
+  vertical-align: top;
+}
+#socialEditor .edit-card .field-row:last-child { margin-right: 0; }
 .work-attachment-hint { margin: 2px 0 0 84px; font-size: 10.5px; color: var(--c-success); line-height: 1.45; }
 
 /* 删除按钮（统一幽灵样式） */
@@ -472,9 +496,71 @@ textarea { width: 100%; resize: vertical; min-height: 60px; font-family: inherit
 .import-status { font-size: 12px; }
 .import-panel code { background: var(--c-surface); padding: 1px 5px; border-radius: 4px; color: var(--c-primary); }
 
-/* ============ 四级级联选择器 ============ */
-.cascade-row { display: flex; flex-direction: column; gap: 6px; }
-.cascade-label { font-size: 11.5px; color: var(--c-text-2); margin-bottom: -2px; }
-.cascade-region { width: 100%; font-size: 13px; padding: 8px 10px; min-height: 36px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); }
-.cascade-china { display: flex; gap: 6px; flex-wrap: wrap; }
-.cascade-china select { flex: 1 1 30%; min-width: 100px; font-size: 12.5px; padding: 7px 6px; min-height: 34px; border: 1px solid var(--c-border); border-radius: var(--radius-sm); }
+/* ============ 单框级联选择器（所在地点 / 家乡）============ */
+/* 仿腾讯「当前所处地」：一个框 → 点开浮层 → 国家→省→市→区 单级钻取，精确到区 */
+.cascade-row { display: flex; flex-direction: column; gap: 8px; }
+.cascade-single, .dd, .month-single { position: relative; }
+.dd { display: block; }
+/* 统一控件外观（级联 / 自定义下拉 / 月份），与 .edit-input 一致、高度统一 */
+.cascade-trigger, .dd-trigger, .month-trigger {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  width: 100%; padding: 8px 11px; box-sizing: border-box;
+  border: 1px solid var(--c-border); border-radius: var(--radius-sm);
+  background: var(--c-surface); color: var(--c-text);
+  font-size: 13px; cursor: pointer; transition: border-color .15s, box-shadow .15s;
+}
+.cascade-trigger:hover, .dd-trigger:hover, .month-trigger:hover { border-color: var(--c-border-strong); }
+.cascade-trigger.open, .dd-trigger.open, .month-trigger.open { border-color: var(--c-primary); box-shadow: var(--ring); }
+.cascade-text, .dd-text, .month-text { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cascade-text.placeholder, .dd-text.placeholder, .month-text.placeholder { color: var(--c-text-3); }
+.cascade-arrow, .dd-arrow, .month-arrow { flex: 0 0 auto; color: var(--c-text-3); font-size: 11px; transition: transform .15s; }
+.cascade-trigger.open .cascade-arrow, .dd-trigger.open .dd-arrow, .month-trigger.open .month-arrow { transform: rotate(180deg); }
+
+/* 浮层（级联 / 下拉 / 月份 共用） */
+.cascade-panel, .dd-panel, .month-panel {
+  position: absolute; z-index: 60; top: calc(100% + 6px); left: 0; right: 0;
+  background: var(--c-surface); border: 1px solid var(--c-border-strong);
+  border-radius: var(--radius); box-shadow: 0 8px 28px rgba(0,0,0,.14);
+  padding: 8px; overflow: hidden;
+}
+.cascade-panel[hidden], .dd-panel[hidden], .month-panel[hidden] { display: none; }
+
+/* 级联：单级钻取 + 返回 */
+.cascade-head { display: flex; align-items: center; gap: 10px; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--c-border); }
+.cascade-back { color: var(--c-primary); font-size: 12px; cursor: pointer; user-select: none; }
+.cascade-back:hover { color: var(--c-primary-active); }
+.cascade-step { font-size: 12px; color: var(--c-text-2); font-weight: 500; }
+.cascade-col { max-height: 244px; overflow-y: auto; }
+.cascade-col::-webkit-scrollbar { width: 6px; }
+.cascade-col::-webkit-scrollbar-thumb { background: var(--c-border-strong); border-radius: 3px; }
+.cascade-empty { padding: 10px 8px; color: var(--c-text-3); font-size: 12px; text-align: center; }
+
+/* 选项高亮（级联 / 下拉 / 月份 共用） */
+.cascade-opt, .dd-opt, .month-opt {
+  padding: 7px 8px; border-radius: var(--radius-sm); font-size: 12.5px;
+  color: var(--c-text); cursor: pointer; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+.cascade-opt:hover, .dd-opt:hover, .month-opt:hover { background: var(--c-surface-3); }
+.cascade-opt.selected, .dd-opt.selected, .month-opt.selected { background: var(--c-primary-soft); color: var(--c-primary-active); font-weight: 600; }
+
+/* 自定义下拉面板 */
+.dd-panel { min-width: 100%; }
+.dd-opt { display: block; }
+
+/* 出生年月日历（年 → 月 → 日，仿日历） */
+.month-head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 6px; margin-bottom: 6px; border-bottom: 1px solid var(--c-border); }
+.month-back, .month-next { height: 24px; display: flex; align-items: center; justify-content: center; border-radius: 6px; cursor: pointer; color: var(--c-text-2); font-size: 14px; flex: 0 0 auto; }
+.month-back { width: auto; padding: 0 4px; font-size: 12px; }
+.month-next { width: 24px; }
+.month-back:hover, .month-next:hover { background: var(--c-surface-3); color: var(--c-primary); }
+.month-year { font-size: 12.5px; font-weight: 600; color: var(--c-text); flex: 1 1 auto; text-align: center; }
+.month-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 4px; }
+.month-week span { text-align: center; font-size: 11px; color: var(--c-text-3); line-height: 1.6; }
+.month-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; }
+.month-grid.show-day { grid-template-columns: repeat(7, 1fr); }
+.month-opt { text-align: center; padding: 6px 0; border-radius: 6px; cursor: pointer; font-size: 13px; }
+.month-opt.empty { cursor: default; }
+.month-opt.empty:hover { background: transparent; }
+.month-single { width: 100%; }
+

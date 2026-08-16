@@ -30,6 +30,7 @@
     </div>
     <div class="topbar-actions">
       <span id="topStatus" class="status"></span>
+      <a id="openWebBtn" class="btn-web" href="https://ariayang-333.github.io/qiuzhao-autofill/" target="_blank" rel="noopener" title="打开产品网页（功能介绍 / 使用说明）">网页版 ↗</a>
       <button id="closePopup" class="btn-close" title="关闭">×</button>
     </div>
   </header>
@@ -89,18 +90,17 @@
     <a href="#edit-works" class="sub">作品集</a>
     <a href="#edit-awards" class="sub">获奖</a>
     <a href="#edit-competitions" class="sub">竞赛</a>
-    <a href="#edit-languages" class="sub">语言</a>
-    <a href="#edit-social" class="sub">社交</a>
+    <a href="#edit-languages" class="sub">语言能力</a>
+    <a href="#edit-social" class="sub">社交账号</a>
     <a href="#edit-certificates" class="sub">证书</a>
     <a href="#edit-papers" class="sub">论文</a>
-    <a href="#edit-patents" class="sub">发明成果专利</a>
-    <a href="#edit-skills" class="sub">技能</a>
-    <a href="#edit-reference" class="sub">资料证明人</a>
-    <a href="#edit-aiskills" class="sub">AI 应用技能</a>
+    <a href="#edit-patents" class="sub">专利</a>
     <a href="#edit-devlang" class="sub">开发语言</a>
+    <a href="#edit-skills" class="sub">技能</a>
+    <a href="#edit-aiskills" class="sub">AI 应用技能</a>
+    <a href="#edit-reference" class="sub">资料证明人</a>
     <a href="#edit-selfeval" class="sub">自我评价</a>
     <a href="#edit-intent" class="sub">求职意向</a>
-    <a href="#edit-custom" class="sub">自定义字段</a>
   </nav>
 
   <main class="body" id="mainBody">
@@ -210,28 +210,29 @@
           <div id="papersEditor" class="edit-list"></div>
         </div>
         <div class="edit-group" id="edit-patents">
-          <div class="edit-title">发明成果专利 <button class="btn-add-small" data-section="patents">+ 添加</button></div>
+          <div class="edit-title">专利 <button class="btn-add-small" data-section="patents">+ 添加</button></div>
           <div class="hint">成果类型 / 成果名称 / 登记号 / 登记日期 / 发明人排名 / 核心简介。填表时插件会在支持该字段的站点（如腾讯「其他关键信息」）填入，无对应字段的站点自动跳过，不会乱填。</div>
           <div id="patentsEditor" class="edit-list"></div>
         </div>
-        <div class="edit-group" id="edit-skills">
-          <div class="edit-title">技能 <button class="btn-add-small" data-section="skills">+ 添加</button></div>
-          <div id="skillsEditor" class="edit-list"></div>
+        <div class="edit-group" id="edit-devlang">
+          <div class="edit-title">开发语言</div>
+          <div class="hint">填<b>具体的编程语言</b>，如 Python、C/C++、Java、JavaScript、Go、C#、SQL、HTML/CSS 等。这是研发岗 / 技术栈匹配用的<b>独立筛选项</b>，和下面的「技能」不重复——<b>编程语言别在技能里重复填</b>。点下方「常用」可直接加标签；留空则插件不填、留给你自己选。</div>
+          <div class="edit-grid" id="devLangEditor"></div>
         </div>
-        <div class="edit-group" id="edit-reference">
-          <div class="edit-title">资料证明人</div>
-          <div class="hint">腾讯简历的必填三连（证明人 / 身份 / 电话）。可以填实习主管或导师，<b>建议先征得对方同意</b>。不填就留空，插件不会瞎编。</div>
-          <div class="edit-grid" id="referenceEditor"></div>
+        <div class="edit-group" id="edit-skills">
+          <div class="edit-title">技能</div>
+          <div class="hint">填<b>工具 / 框架 / AI 工具 / 设计剪辑 / 运营类能力</b>，如 Figma、Premiere / 剪映、PR、公众号运营、Excel、Photoshop、数据分析、React、Git、Docker、PyTorch 等。输入后回车成标签，或点下方「常用」直接加。<b>编程语言请填到上面的「开发语言」</b>。</div>
+          <div id="skillsEditor" class="edit-list"></div>
         </div>
         <div class="edit-group" id="edit-aiskills">
           <div class="edit-title">AI 应用技能</div>
           <div class="hint">腾讯 2026 校招新增板块，问你常用的 AI 工具 &amp; 模型、与 AI 协作完成的项目、以及作品链接。求 AI 相关岗位的话这块很加分。</div>
           <div class="edit-grid" id="aiSkillsEditor"></div>
         </div>
-        <div class="edit-group" id="edit-devlang">
-          <div class="edit-title">开发语言</div>
-          <div class="hint">腾讯、字节等研发岗会把「擅长的开发语言」做成<b>多选标签</b>。这里填了，插件会按你填的自动匹配；留空的，插件一律不填、留给你自己选。</div>
-          <div class="edit-grid" id="devLangEditor"></div>
+        <div class="edit-group" id="edit-reference">
+          <div class="edit-title">资料证明人</div>
+          <div class="hint">腾讯简历的必填三连（证明人 / 身份 / 电话）。可以填实习主管或导师，<b>建议先征得对方同意</b>。不填就留空，插件不会瞎编。</div>
+          <div class="edit-grid" id="referenceEditor"></div>
         </div>
         <div class="edit-group" id="edit-selfeval">
           <div class="edit-title">自我评价</div>
@@ -241,12 +242,6 @@
           <div class="edit-title">求职意向</div>
           <div class="hint">腾讯、字节等站点会把「期望城市 / 面试城市 / 到岗时间 / 实习时长」做成<b>必填</b>。这里填了，插件才会替你填；留空的，插件一律不猜、留给你自己选。</div>
           <div class="edit-grid" id="intentEditor"></div>
-        </div>
-        <div class="edit-group" id="edit-custom">
-          <div class="edit-title">自定义字段</div>
-          <div class="hint">可添加任意「字段名 + 字段值」覆盖小众投递字段；保存后随档案一并导出。不会自动填进网站，但可在导出档案中查看与迁移。</div>
-          <div id="customEditor"></div>
-          <button class="btn-add-foot" data-section="custom">＋ 添加一条</button>
         </div>
       </div>
       <button id="saveProfileBtn" class="btn btn-primary">保存当前简历</button>
@@ -287,7 +282,7 @@
     </div>
   </main>
 
-  <footer class="foot">v0.7.3 · 仅辅助填写，请人工确认后提交 · <button id="openTrackerBtn" class="btn-link">投递记录</button> · <button id="openFloatWindowBtn" class="btn-link">重新打开页面面板</button></footer>
+  <footer class="foot">v0.8.11 · 仅辅助填写，请人工确认后提交 · <button id="openTrackerBtn" class="btn-link">投递记录</button> · <button id="openFloatWindowBtn" class="btn-link">重新打开页面面板</button></footer>
 
   <script src="pdf.min.js"></script>
   <script src="clear_data.js"></script>

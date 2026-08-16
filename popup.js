@@ -682,13 +682,13 @@ $("exportProfileBtn").addEventListener("click", () => {
 // 给档案编辑器所有输入框加自动保存：input/change 事件 debounce 600ms 后落盘。
 const autoSaveProfileDebounced = debounce(() => saveProfileFromEditor(), 600);
 document.addEventListener("input", (e) => {
-  if (e.target.closest("#basicEditor, #educationEditor, #internshipsEditor, #projectsEditor, #campusEditor, #papersEditor, #competitionsEditor, #languagesEditor, #socialEditor, #certificatesEditor, #skillsEditor, #awardsEditor, #patentsEditor, #intentEditor, #referenceEditor, #aiSkillsEditor, #customEditor, #selfEvalEditor")) {
+  if (e.target.closest("#basicEditor, #educationEditor, #internshipsEditor, #projectsEditor, #campusEditor, #papersEditor, #competitionsEditor, #languagesEditor, #socialEditor, #certificatesEditor, #skillsEditor, #awardsEditor, #patentsEditor, #intentEditor, #referenceEditor, #aiSkillsEditor, #selfEvalEditor")) {
     autoSaveProfileDebounced();
   }
 });
 // change 事件（下拉选择、单选等）立即保存，不 debounce
 document.addEventListener("change", (e) => {
-  if (e.target.closest("#basicEditor, #educationEditor, #internshipsEditor, #projectsEditor, #campusEditor, #papersEditor, #competitionsEditor, #languagesEditor, #socialEditor, #certificatesEditor, #skillsEditor, #awardsEditor, #patentsEditor, #intentEditor, #referenceEditor, #aiSkillsEditor, #customEditor, #selfEvalEditor")) {
+  if (e.target.closest("#basicEditor, #educationEditor, #internshipsEditor, #projectsEditor, #campusEditor, #papersEditor, #competitionsEditor, #languagesEditor, #socialEditor, #certificatesEditor, #skillsEditor, #awardsEditor, #patentsEditor, #intentEditor, #referenceEditor, #aiSkillsEditor, #selfEvalEditor")) {
     saveProfileFromEditor();
   }
 });
@@ -854,16 +854,24 @@ function createWorkCard(w, idx) {
     </div>
     <div class="work-fields">
       <div class="work-row">
+        <span class="work-label">作品名称</span>
+        <input class="work-name" placeholder="例如：智能简历解析浏览器扩展" value="${escapeHtml(w.name || "")}">
+      </div>
+      <div class="work-row">
         <span class="work-label">作品链接</span>
         <input class="work-link" placeholder="https://..." value="${escapeHtml(w.link || "")}">
+      </div>
+      <div class="work-row">
+        <span class="work-label">密码 / 提取码</span>
+        <input class="work-pwd" placeholder="网盘私密分享的提取码等，没有可留空" value="${escapeHtml(w.password || "")}">
       </div>
       <div class="work-row">
         <span class="work-label">作品描述</span>
         <textarea class="work-desc" rows="2" placeholder="简单描述这个作品">${escapeHtml(w.desc || "")}</textarea>
       </div>
       <div class="work-row">
-        <span class="work-label">密码 / 提取码</span>
-        <input class="work-pwd" placeholder="网盘私密分享的提取码等，没有可留空" value="${escapeHtml(w.password || "")}">
+        <span class="work-label">作品日期</span>
+        <div class="month-single" data-month="work-date"></div>
       </div>
       <div class="work-row work-file-row">
         <span class="work-label">作品附件</span>
@@ -899,6 +907,17 @@ function createWorkCard(w, idx) {
   card.querySelector(".work-link").addEventListener("input", (e) => { currentWorks[idx].link = e.target.value; debouncedSave(); });
   card.querySelector(".work-desc").addEventListener("input", (e) => { currentWorks[idx].desc = e.target.value; debouncedSave(); });
   card.querySelector(".work-pwd").addEventListener("input", (e) => { currentWorks[idx].password = e.target.value; debouncedSave(); });
+  // 2026-08-16：作品名称 + 作品日期（年→月→日日历）
+  card.querySelector(".work-name").addEventListener("input", (e) => { currentWorks[idx].name = e.target.value; debouncedSave(); });
+  const dateBox = card.querySelector('[data-month="work-date"]');
+  if (dateBox) {
+    renderMonthPicker(dateBox, "work-date-" + idx, w.date || "");
+    const dateHidden = dateBox.querySelector('[data-key="work-date-' + idx + '"]');
+    if (dateHidden) {
+      const mo = new MutationObserver(() => { currentWorks[idx].date = dateHidden.value; debouncedSave(); });
+      mo.observe(dateHidden, { attributes: true, attributeFilter: ["value"] });
+    }
+  }
   // 文件选择：直接在卡片上显示每一步状态，不重建列表（避免输入框被重置、状态行消失）
   // 合并后的「作品附件」单槽：PDF 或视频都放这一个，网页作品附件框本就是单文件框
   function setAttachmentUi(name, size, mode) {
@@ -992,7 +1011,7 @@ function createWorkCard(w, idx) {
 }
 
 $("addWorkBtn").addEventListener("click", () => {
-  currentWorks.push({ link: "", desc: "", attachment: null });
+  currentWorks.push({ name: "", link: "", desc: "", date: "", password: "", attachment: null });
   saveWorks();
   renderWorks(currentWorks);
 });
@@ -1034,6 +1053,7 @@ function buildWorksFromProfile(profile) {
   source.forEach((w) => {
     if (w.link || w.description || w.name) {
       out.push({
+        name: w.name || "",
         link: w.link || "",
         desc: (w.name ? "【" + w.name + "】 " : "") + (w.description || ""),
         password: w.password || "",
@@ -1382,75 +1402,216 @@ function renderCascade(container, key, basic) {
   const provinceKey = key + "Province";
   const cityKey = key + "City";
   const districtKey = key + "District";
-  const raw = basic[key] || "";
-
+  container.classList.add("cascade-single");
   container.innerHTML = `
-    <label class="cascade-label">国家/地区</label>
-    <select class="edit-input cascade-region" data-key="${regionKey}" data-cascade-key="${key}" data-level="region"><option value="">请选择国家/地区</option></select>
-    <div class="cascade-china" style="display:none;">
-      <select class="edit-input" data-key="${provinceKey}" data-cascade-key="${key}" data-level="province"><option value="">省/直辖市</option></select>
-      <select class="edit-input" data-key="${cityKey}" data-cascade-key="${key}" data-level="city"><option value="">市</option></select>
-      <select class="edit-input" data-key="${districtKey}" data-cascade-key="${key}" data-level="district"><option value="">区/县</option></select>
+    <div class="cascade-trigger"><span class="cascade-text"></span><span class="cascade-arrow">▾</span></div>
+    <div class="cascade-panel" hidden>
+      <div class="cascade-head"><span class="cascade-back">‹ 返回</span><span class="cascade-step"></span></div>
+      <div class="cascade-col"></div>
     </div>
+    <input type="hidden" data-key="${regionKey}" value="">
+    <input type="hidden" data-key="${provinceKey}" value="">
+    <input type="hidden" data-key="${cityKey}" value="">
+    <input type="hidden" data-key="${districtKey}" value="">
   `;
-  const rSel = container.querySelector('[data-level="region"]');
-  const chinaWrap = container.querySelector('.cascade-china');
-  const pSel = container.querySelector('[data-level="province"]');
-  const cSel = container.querySelector('[data-level="city"]');
-  const dSel = container.querySelector('[data-level="district"]');
+  const trigger = container.querySelector(".cascade-trigger");
+  const panel = container.querySelector(".cascade-panel");
+  const back = container.querySelector(".cascade-back");
+  const stepEl = container.querySelector(".cascade-step");
+  const col = container.querySelector(".cascade-col");
+  const hR = container.querySelector(`[data-key="${regionKey}"]`);
+  const hP = container.querySelector(`[data-key="${provinceKey}"]`);
+  const hC = container.querySelector(`[data-key="${cityKey}"]`);
+  const hD = container.querySelector(`[data-key="${districtKey}"]`);
+  const textEl = container.querySelector(".cascade-text");
+  let step = 1;
+  const STEP_TITLE = { 1: "选择国家 / 地区", 2: "选择省 / 直辖市", 3: "选择城市", 4: "选择区 / 县" };
 
-  const setChinaVisible = (show) => {
-    chinaWrap.style.display = show ? "flex" : "none";
-    if (!show) {
-      pSel.value = ""; cSel.value = ""; dSel.value = "";
-      cSel.innerHTML = '<option value="">市</option>';
-      dSel.innerHTML = '<option value="">区/县</option>';
+  function syncText() {
+    const parts = [hP.value, hC.value, hD.value].filter(Boolean);
+    if (parts.length) { textEl.textContent = parts.join("  "); textEl.classList.remove("placeholder"); }
+    else if (hR.value) { textEl.textContent = hR.value; textEl.classList.remove("placeholder"); }
+    else { textEl.textContent = "请选择 国家/地区 · 省 · 市 · 区"; textEl.classList.add("placeholder"); }
+  }
+  function close() { panel.hidden = true; trigger.classList.remove("open"); }
+  function startStep() {
+    if (!hR.value) return 1;
+    if (hR.value !== "中国大陆") return 1;
+    if (!hP.value) return 2;
+    if (!hC.value) return 3;
+    if (!hD.value) return 4;
+    return 4;
+  }
+  function levelItems() {
+    if (step === 1) return REGION_OPTIONS.map((v) => ({ v, t: v }));
+    if (step === 2) return (districtData || []).map((p) => ({ v: p.name, t: p.name }));
+    if (step === 3) {
+      const prov = (districtData || []).find((p) => p.name === hP.value);
+      return (prov && prov.children ? prov.children : []).map((c) => ({ v: c.name, t: c.name }));
     }
-  };
+    const prov = (districtData || []).find((p) => p.name === hP.value);
+    if (!cityLevelExists()) return (prov && prov.children ? prov.children : []).map((d) => ({ v: d.name, t: d.name }));
+    const cit = prov && prov.children ? prov.children.find((c) => c.name === hC.value) : null;
+    return (cit && cit.children ? cit.children : []).map((d) => ({ v: d.name, t: d.name }));
+  }
+  function selectedVal() {
+    return step === 1 ? hR.value : step === 2 ? hP.value : step === 3 ? hC.value : hD.value;
+  }
+  // 直辖市/特区（如 北京市）省下直接是区县、没有「市」级 → 跳过市
+  function cityLevelExists() {
+    const prov = (districtData || []).find((p) => p.name === hP.value);
+    return !!(prov && prov.children && prov.children.length && prov.children[0].children && prov.children[0].children.length);
+  }
+  function renderStep() {
+    stepEl.textContent = STEP_TITLE[step];
+    back.style.visibility = step > 1 ? "visible" : "hidden";
+    const items = levelItems();
+    const sel = selectedVal();
+    col.innerHTML = "";
+    if (!items.length) {
+      const empty = document.createElement("div");
+      empty.className = "cascade-empty";
+      empty.textContent = step >= 3 ? "（无下级选项）" : "（无数据）";
+      col.appendChild(empty);
+      return;
+    }
+    items.forEach((it) => {
+      const o = document.createElement("div");
+      o.className = "cascade-opt" + (it.v === sel ? " selected" : "");
+      o.textContent = it.t;
+      o.addEventListener("click", (e) => { e.stopPropagation(); pick(it.v); });
+      col.appendChild(o);
+    });
+  }
+  function pick(val) {
+    if (step === 1) {
+      hR.value = val;
+      if (val !== "中国大陆") { hP.value = ""; hC.value = ""; hD.value = ""; syncText(); close(); return; }
+      step = 2;
+    } else if (step === 2) {
+      hP.value = val; hC.value = ""; hD.value = "";
+      step = cityLevelExists() ? 3 : 4;
+    } else if (step === 3) { hC.value = val; hD.value = ""; step = 4; }
+    else if (step === 4) { hD.value = val; syncText(); close(); return; }
+    syncText(); renderStep();
+  }
+  back.addEventListener("click", (e) => { e.stopPropagation(); if (step > 1) { step = (step === 4 && !cityLevelExists()) ? 2 : step - 1; renderStep(); } });
+  function open() {
+    loadDistricts().then(() => { step = startStep(); renderStep(); panel.hidden = false; trigger.classList.add("open"); });
+  }
+  trigger.addEventListener("click", (e) => { e.stopPropagation(); panel.hidden ? open() : close(); });
+  document.addEventListener("click", (e) => { if (!container.contains(e.target)) close(); });
+  // 初始值：优先用 basic 的省/市/区字段，否则用原 parseCascadeValue 解析 basic[key]
+  hR.value = basic[regionKey] || "";
+  hP.value = basic[provinceKey] || "";
+  hC.value = basic[cityKey] || "";
+  hD.value = basic[districtKey] || "";
+  if (hP.value) { if (!hR.value) hR.value = "中国大陆"; syncText(); }
+  else if (basic[key]) {
+    loadDistricts().then((provinces) => {
+      const p = parseCascadeValue(basic[key], provinces);
+      hR.value = p.region || hR.value; hP.value = p.province || hP.value;
+      hC.value = p.city || hC.value; hD.value = p.district || hD.value;
+      syncText();
+    });
+  } else syncText();
+}
 
-  const fillCityOptions = (provinceName, selectedCity) => {
-    cSel.innerHTML = '<option value="">市</option>';
-    dSel.innerHTML = '<option value="">区/县</option>';
-    const province = (districtData || []).find((p) => p.name === provinceName);
-    if (!province) return;
-    cSel.innerHTML = '<option value="">市</option>' +
-      (province.children || []).map((c) => `<option value="${escapeHtml(c.name)}" ${c.name === selectedCity ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("");
-  };
-
-  const fillDistrictOptions = (provinceName, cityName, selectedDistrict) => {
-    dSel.innerHTML = '<option value="">区/县</option>';
-    const province = (districtData || []).find((p) => p.name === provinceName);
-    if (!province) return;
-    const city = (province.children || []).find((c) => c.name === cityName);
-    if (!city || !city.children) return;
-    dSel.innerHTML = '<option value="">区/县</option>' +
-      city.children.map((d) => `<option value="${escapeHtml(d.name)}" ${d.name === selectedDistrict ? "selected" : ""}>${escapeHtml(d.name)}</option>`).join("");
-  };
-
-  loadDistricts().then((provinces) => {
-    const parsed = parseCascadeValue(raw, provinces);
-    rSel.innerHTML = '<option value="">国家/地区</option>' +
-      REGION_OPTIONS.map((o) => `<option value="${escapeHtml(o)}" ${o === parsed.region ? "selected" : ""}>${escapeHtml(o)}</option>`).join("");
-    setChinaVisible(parsed.region === "中国大陆");
-    if (parsed.region === "中国大陆") {
-      pSel.innerHTML = '<option value="">省/直辖市</option>' +
-        provinces.map((p) => `<option value="${escapeHtml(p.name)}" ${p.name === parsed.province ? "selected" : ""}>${escapeHtml(p.name)}</option>`).join("");
-      if (parsed.province) {
-        fillCityOptions(parsed.province, parsed.city);
-        if (parsed.city) fillDistrictOptions(parsed.province, parsed.city, parsed.district);
+/* 全局：点击空白处关闭所有打开的日历浮层（除点击所在的那个） */
+let __monthCloseBound = false;
+function ensureMonthClose() {
+  if (__monthCloseBound) return;
+  __monthCloseBound = true;
+  document.addEventListener("click", (e) => {
+    const inside = e.target.closest && e.target.closest(".month-single");
+    document.querySelectorAll(".month-panel:not([hidden])").forEach((p) => {
+      const single = p.closest(".month-single");
+      if (single !== inside) {
+        p.hidden = true;
+        const t = single && single.querySelector(".month-trigger");
+        if (t) t.classList.remove("open");
       }
-    }
+    });
   });
+}
 
-  rSel.addEventListener("change", () => {
-    setChinaVisible(rSel.value === "中国大陆");
-  });
-  pSel.addEventListener("change", () => {
-    fillCityOptions(pSel.value, "");
-  });
-  cSel.addEventListener("change", () => {
-    fillDistrictOptions(pSel.value, cSel.value, "");
-  });
+/* ---------- 出生年月日历（年 → 月 → 日）---------- */
+function renderMonthPicker(container, key, current) {
+  container.classList.add("month-single");
+  ensureMonthClose();
+  container.innerHTML = `
+    <div class="month-trigger"><span class="month-text"></span><span class="month-arrow">▾</span></div>
+    <div class="month-panel" hidden>
+      <div class="month-head"><span class="month-back">‹ 返回</span><span class="month-year"></span><span class="month-next">›</span></div>
+      <div class="month-week" hidden></div>
+      <div class="month-grid"></div>
+    </div>
+    <input type="hidden" data-key="${key}" value="${escapeHtml(current || "")}">
+  `;
+  const trigger = container.querySelector(".month-trigger");
+  const panel = container.querySelector(".month-panel");
+  const back = container.querySelector(".month-back");
+  const yearEl = container.querySelector(".month-year");
+  const next = container.querySelector(".month-next");
+  const week = container.querySelector(".month-week");
+  const grid = container.querySelector(".month-grid");
+  const hidden = container.querySelector(`[data-key="${key}"]`);
+  const textEl = container.querySelector(".month-text");
+  const now = new Date();
+  let step = "month";
+  let viewYear = now.getFullYear();
+  let viewMonth = 1;
+  const cur = String(current || "").split("-");
+  if (cur[0]) viewYear = parseInt(cur[0], 10) || viewYear;
+  if (cur[1]) viewMonth = parseInt(cur[1], 10) || viewMonth;
+  step = cur[2] ? "day" : "month";
+  const pad = (n) => String(n).padStart(2, "0");
+  const daysInMonth = (y, m) => new Date(y, m, 0).getDate();
+
+  function syncText() {
+    const p = hidden.value.split("-");
+    if (p[0] && p[1] && p[2]) { textEl.textContent = `${p[0]} 年 ${parseInt(p[1], 10)} 月 ${parseInt(p[2], 10)} 日`; textEl.classList.remove("placeholder"); }
+    else if (p[0] && p[1]) { textEl.textContent = `${p[0]} 年 ${parseInt(p[1], 10)} 月`; textEl.classList.remove("placeholder"); }
+    else { textEl.textContent = "请选择 年 / 月 / 日"; textEl.classList.add("placeholder"); }
+  }
+  function close() { panel.hidden = true; trigger.classList.remove("open"); }
+  function renderMonth() {
+    step = "month"; back.hidden = true; week.hidden = true; grid.classList.remove("show-day");
+    yearEl.textContent = viewYear + " 年";
+    next.textContent = "›"; next.title = "下一年";
+    grid.innerHTML = "";
+    for (let i = 1; i <= 12; i++) {
+      const o = document.createElement("div");
+      o.className = "month-opt" + (`${viewYear}-${pad(i)}` === hidden.value.slice(0, 7) ? " selected" : "");
+      o.textContent = i + "月";
+      o.addEventListener("click", () => { viewMonth = i; renderDay(); });
+      grid.appendChild(o);
+    }
+  }
+  function renderDay() {
+    step = "day"; back.hidden = false; week.hidden = false; grid.classList.add("show-day");
+    week.innerHTML = "";
+    ["日", "一", "二", "三", "四", "五", "六"].forEach((w) => { const s = document.createElement("span"); s.textContent = w; week.appendChild(s); });
+    yearEl.textContent = viewYear + " 年 " + viewMonth + " 月";
+    next.textContent = "›"; next.title = "下一个月";
+    const dim = daysInMonth(viewYear, viewMonth);
+    const first = new Date(viewYear, viewMonth - 1, 1).getDay();
+    grid.innerHTML = "";
+    for (let i = 0; i < first; i++) { const e = document.createElement("div"); e.className = "month-opt empty"; grid.appendChild(e); }
+    for (let d = 1; d <= dim; d++) {
+      const val = `${viewYear}-${pad(viewMonth)}-${pad(d)}`;
+      const o = document.createElement("div");
+      o.className = "month-opt" + (val === hidden.value ? " selected" : "");
+      o.textContent = d;
+      o.addEventListener("click", () => { hidden.value = val; syncText(); close(); });
+      grid.appendChild(o);
+    }
+  }
+  function open() { (step === "day" ? renderDay : renderMonth)(); panel.hidden = false; trigger.classList.add("open"); }
+  back.addEventListener("click", () => { renderMonth(); });
+  next.addEventListener("click", () => { if (step === "month") viewYear++; else viewMonth = viewMonth % 12 + 1; (step === "month" ? renderMonth : renderDay)(); });
+  trigger.addEventListener("click", () => { panel.hidden ? open() : close(); });
+  syncText();
 }
 
 /* ---------- 编辑器 ---------- */
@@ -1463,7 +1624,7 @@ function clearEditor() {
   renderKV("intentEditor", {}, INTENT_FIELDS);
   renderKV("referenceEditor", {}, REFERENCE_FIELDS);
   renderKV("aiSkillsEditor", {}, AI_SKILL_FIELDS);
-  renderKV("devLangEditor", {}, DEV_LANG_FIELDS);
+  renderDevLang({});
 }
 
 function renderEditor(profile) {
@@ -1494,61 +1655,64 @@ function renderEditor(profile) {
   renderKV("intentEditor", profile.intent, INTENT_FIELDS);
   renderKV("referenceEditor", profile.reference, REFERENCE_FIELDS);
   renderKV("aiSkillsEditor", profile.aiSkills, AI_SKILL_FIELDS);
-  renderKV("devLangEditor", profile.devLang, DEV_LANG_FIELDS);
-  renderList("customEditor", profile.customFields || [], CUSTOM_FIELDS);
+  renderDevLang(profile.devLang);
   $("selfEvalEditor").value = profile.selfEval || "";
 }
 
+// 字段顺序 / 标签已对齐网页落地版 our-plugin-web-v4.html（2026-08-16 用户要求）
 const BASIC_FIELDS = [
   { key: "name", label: "姓名" },
-  { key: "gender", label: "性别" },
+  { key: "gender", label: "性别", options: ["男", "女", "其他"] },
+  { key: "birth", label: "出生年月" },
   { key: "phone", label: "手机号" },
   { key: "email", label: "邮箱" },
-  { key: "location", label: "所在地点", cascade: true },
-  { key: "politicalStatus", label: "政治面貌（如 中共党员 / 共青团员 / 群众）" },
-  { key: "birth", label: "出生年月" },
-  { key: "targetPosition", label: "目标岗位" },
-  { key: "nationality", label: "国籍/地区（如 中国）" },
+  { key: "location", label: "现居城市", cascade: true },
+  { key: "politicalStatus", label: "政治面貌", options: ["中共党员", "共青团员", "群众", "民主党派", "无党派人士"] },
+  { key: "targetPosition", label: "求职意向 / 目标岗位" },
+  { key: "nationality", label: "国籍/地区", options: ["中国", "中国香港", "中国澳门", "中国台湾", "美国", "英国", "加拿大", "澳大利亚", "日本", "韩国", "新加坡", "其他"] },
   { key: "hometown", label: "家乡", cascade: true },
   { key: "idType", label: "证件类型", options: ["居民身份证", "港澳居民来往内地通行证", "护照", "永久居留证", "台湾居民来往大陆通行证", "香港身份证", "澳门身份证", "其他"] },
   { key: "idNumber", label: "证件号码" },
-  // v0.7.2：以下 6 项此前只有填充映射、没有录入入口 —— content.js 读 basics.wechat / basics.qq /
-  // basics.homepage / basics.emergency* 全都取不到值，腾讯这几个框因此一直空着。补上录入口后闭环。
-  { key: "wechat", label: "微信号" },
+  { key: "ethnicity", label: "民族" },
+  { key: "hobbies", label: "兴趣爱好" },
   { key: "qq", label: "QQ 号" },
   { key: "homepage", label: "个人主页 / 作品集链接" },
+  { key: "wechat", label: "微信号" },
   { key: "emergencyContact", label: "紧急联系人姓名" },
-  { key: "emergencyRelation", label: "与紧急联系人关系（如 父女）" },
+  { key: "emergencyRelation", label: "与紧急联系人关系" },
   { key: "emergencyPhone", label: "紧急联系人电话" },
-  { key: "ethnicity", label: "民族（如 汉族）" },
-  { key: "hobbies", label: "兴趣爱好（多个用顿号分隔，如 摄影/篮球）" },
 ];
 // ── v0.7.2：三个「单对象」板块 ─────────────────────────────────────────────────
 // 这三块的填充映射在 content.js 里早就写好了（腾讯适配时加的），但档案界面一直没有录入口，
 // 等于死代码：profile.intent / profile.reference / profile.aiSkills 永远是 undefined，
 // 腾讯的期望城市、面试城市、证明人三连、AI 技能三连因此全部空着。补上录入口后才真正闭环。
+// 字段顺序 / 标签已对齐网页落地版
 const INTENT_FIELDS = [
-  { key: "expectedCities", label: "期望工作城市（多个用「、」分隔，最多三个）", multi: true },
-  { key: "interviewCity", label: "可参加面试城市" },
-  { key: "availableFrom", label: "最早可到岗时间（如 2026-07 / 随时）" },
-  { key: "internshipDuration", label: "可实习时长（如 6 个月）" },
-  { key: "weeklyDays", label: "每周可出勤天数（如 5 天）" },
-  { key: "expectedSalary", label: "期望薪资（不想填可留空）" },
-  { key: "acceptOtherCities", label: "是否接受调剂到其他城市", options: ["是", "否"] },
+  { key: "expectedCities", label: "期望城市", multi: true },
+  { key: "availableFrom", label: "到岗时间" },
+  { key: "internshipDuration", label: "可实习时长" },
+  { key: "weeklyDays", label: "每周出勤" },
+  { key: "interviewCity", label: "可面试城市" },
+  { key: "expectedSalary", label: "期望薪资" },
+  { key: "acceptOtherCities", label: "是否接受调剂", options: ["是", "否"] },
 ];
 const REFERENCE_FIELDS = [
   { key: "name", label: "证明人姓名" },
-  { key: "identity", label: "证明人身份（如 实习主管 / 导师）" },
   { key: "phone", label: "证明人联系电话" },
+  { key: "identity", label: "证明人身份（如 实习主管 / 导师）" },
 ];
+// 字段标签已对齐网页落地版
 const AI_SKILL_FIELDS = [
-  { key: "tools", label: "常用 AI 工具 & 模型（如 Cursor、Claude、Coze）" },
-  { key: "collabProject", label: "与 AI 协作完成的项目（目标背景 / 分工 / 挑战 / 结果）", textarea: true, full: true },
-  { key: "link", label: "相关项目或作品链接" },
+  { key: "tools", label: "① 常用 AI 工具 & 模型" },
+  { key: "collabProject", label: "② 与 AI 协作完成的项目或任务", textarea: true, full: true },
+  { key: "link", label: "③ 相关项目或作品链接" },
 ];
 const DEV_LANG_FIELDS = [
-  { key: "langs", label: "擅长的开发语言（多个用「、」分隔，如 Python、C++、JavaScript、Go）" },
+  { key: "langs", label: "擅长的开发语言" },
 ];
+// 开发语言 / 技能 的预设常用项：点一下直接加标签，减少"该填什么"的混淆（2026-08-16 用户要求）
+const DEV_LANG_PRESETS = ["Python", "C/C++", "Java", "JavaScript", "TypeScript", "Go", "C#", "SQL", "HTML/CSS", "Rust", "Swift", "Kotlin", "R", "MATLAB", "Shell", "PHP", "其他"];
+const SKILL_PRESETS = ["Figma", "Photoshop", "Premiere", "剪映", "公众号排版", "小红书运营", "PR / 公众号运营", "Excel", "PPT", "数据分析", "短视频剪辑", "直播运营", "内容策划", "受众分析", "用户增长", "React", "Git", "Docker", "PyTorch", "文案写作", "SEO", "飞书", "Notion"];
 
 // 单对象板块的通用渲染 / 收集，与 renderBasic 同构，避免为三个新板块各抄一份
 function renderKV(containerId, obj, fields) {
@@ -1562,6 +1726,12 @@ function renderKV(containerId, obj, fields) {
     const row = document.createElement("div");
     row.className = "field-row";
     if (f.full) row.classList.add("full");
+    if (f.date) {
+      row.innerHTML = `<label class="field-label">${f.label}</label><div class="month-single" data-month="${f.key}"></div>`;
+      c.appendChild(row);
+      renderMonthPicker(row.querySelector(".month-single"), f.key, val);
+      return;
+    }
     if (f.options) {
       row.innerHTML = `<label class="field-label">${f.label}</label>${buildSelectHtml(f, val)}`;
     } else if (f.textarea) {
@@ -1590,48 +1760,50 @@ function collectKV(containerId, fields) {
   return out;
 }
 
+// 字段顺序 / 标签已对齐网页落地版（含新增「目前就读地」）
 const EDU_FIELDS = [
   { key: "school", label: "学校" },
   { key: "major", label: "专业" },
   { key: "degree", label: "学历/学位", select: true, options: ["小学", "初中", "高中", "中专", "大专", "专科", "本科", "硕士", "博士", "MBA"] },
   { key: "eduType", label: "学习形式", select: true },
-  { key: "start", label: "开始时间" },
-  { key: "end", label: "结束时间" },
-  { key: "college", label: "学院 / 院系" },
-  { key: "rank", label: "成绩排名（如 3/120、前5%、GPA 3.8/4.0）" },
-  { key: "tutor", label: "导师（无导师可填「无」）" },
-  { key: "lab", label: "实验室 / 课题组" },
-  { key: "research", label: "研究方向 / 领域方向" },
-  // v0.7.2：腾讯把绩点拆成「你的绩点」+「院校满绩绩点」两个独立必填框，
-  // content.js 早已按 item.gpa / item.gpaBase 取值，但这里一直没有录入口 → 两个框恒空。
-  { key: "gpa", label: "绩点 GPA（如 3.8）" },
-  { key: "gpaBase", label: "满绩绩点（如 4.0 / 5.0）" },
-  { key: "transcript", label: "成绩单文件（有就上传，没有留空）", file: true },
+  { key: "start", label: "开始时间", date: true },
+  { key: "end", label: "结束时间", date: true },
+  { key: "college", label: "学院" },
+  { key: "studyLocation", label: "目前就读地" },
+  { key: "lab", label: "实验室" },
+  { key: "tutor", label: "导师" },
+  { key: "research", label: "研究方向" },
+  { key: "rank", label: "成绩排名" },
+  { key: "gpa", label: "绩点 GPA" },
+  { key: "gpaBase", label: "满绩绩点" },
+  { key: "transcript", label: "成绩单文件", file: true },
 ];
 const EDU_SELECTS = {
   degree: ["大专", "本科", "硕士", "博士", "其他"],
   eduType: ["全日制", "非全日制", "统招", "自考", "成人教育", "网络教育", "在职"],
 };
+// 字段顺序 / 标签已对齐网页落地版
 const INTERN_FIELDS = [
   { key: "company", label: "公司" },
-  { key: "title", label: "职位" },
   { key: "department", label: "部门" },
+  { key: "title", label: "职务" },
   { key: "workType", label: "工作类型", options: ["实习", "兼职", "全职", "社会实践"] },
-  { key: "start", label: "开始时间" },
-  { key: "end", label: "结束时间" },
-  { key: "description", label: "实习描述", textarea: true },
-  { key: "responsibilities", label: "实习职责", textarea: true },
-  { key: "achievements", label: "实习成果", textarea: true },
+  { key: "start", label: "开始时间", date: true },
+  { key: "end", label: "结束时间", date: true },
+  { key: "responsibilities", label: "实习职责" },
+  { key: "achievements", label: "实习成果" },
+  { key: "description", label: "实习描述" },
 ];
+// 字段顺序 / 标签已对齐网页落地版（链接移到职责/成果之后）
 const PROJECT_FIELDS = [
   { key: "name", label: "项目名称" },
-  { key: "role", label: "项目职务/岗位" },
-  { key: "start", label: "开始时间" },
-  { key: "end", label: "结束时间" },
-  { key: "link", label: "项目链接" },
-  { key: "description", label: "项目描述", textarea: true },
+  { key: "role", label: "项目岗位" },
+  { key: "start", label: "开始时间", date: true },
+  { key: "end", label: "结束时间", date: true },
   { key: "responsibilities", label: "项目职责", textarea: true },
   { key: "achievements", label: "项目成果", textarea: true },
+  { key: "link", label: "项目链接" },
+  { key: "description", label: "项目描述", textarea: true },
 ];
 // v0.6.71：「语言考试」和「考试分数」必须分开填。
 // 招聘站（美团实测）是两个独立控件：考试是下拉、分数是纯数字校验的输入框。
@@ -1656,63 +1828,68 @@ const LANG_EXAM_MAP = {
   "其他": ["CATTI 三级", "CATTI 二级", "CATTI 一级"]
 };
 const LANGUAGE_FIELDS = [
-  { key: "name", label: "语种（如 英语 / 日语 / 韩语 / 普通话）", options: LANG_LIST },
+  { key: "name", label: "语种", options: LANG_LIST },
   { key: "level", label: "精通程度", options: ["母语", "无障碍商务沟通", "商务会话", "日常会话", "入门", "双语", "精通", "熟练", "良好", "一般"] },
   { key: "exam", label: "语言考试", cascadeFrom: "name", cascadeMap: LANG_EXAM_MAP, allowOther: true },
-  { key: "score", label: "考试分数（只填分数，如 598 / 7.5 / 一级甲等）" },
+  { key: "score", label: "考试分数" },
 ];
 // v0.6.71：美团新增板块，字段按页面实测顺序排列
+// 字段顺序 / 标签已对齐网页落地版
 const CAMPUS_FIELDS = [
-  { key: "name", label: "校园经历名称（社团 / 组织 / 学生工作）" },
-  { key: "role", label: "角色 / 职务" },
-  { key: "start", label: "开始时间" },
-  { key: "end", label: "结束时间" },
+  { key: "name", label: "校园经历名称" },
+  { key: "role", label: "角色" },
+  { key: "start", label: "开始时间", date: true },
+  { key: "end", label: "结束时间", date: true },
   { key: "description", label: "校园经历描述", textarea: true },
 ];
+// 字段顺序 / 标签已对齐网页落地版（新增「论文描述」）
 const PAPER_FIELDS = [
   { key: "name", label: "论文名称" },
-  { key: "venue", label: "发表渠道（会议 / 期刊，如 ASPLOS、ACL）" },
+  { key: "venue", label: "发表渠道" },
   { key: "order", label: "作者顺序", options: ["第一作者", "第二作者", "第三作者", "第四作者", "第五作者", "独立作者", "通讯作者", "其他"] },
-  { key: "impact", label: "影响因子（没有可留空）" },
+  { key: "impact", label: "影响因子" },
   { key: "link", label: "论文链接" },
+  { key: "description", label: "论文描述", textarea: true },
 ];
+// 字段顺序 / 标签已对齐网页落地版（新增「奖项类别」）
 const COMPETITION_FIELDS = [
-  { key: "name", label: "获奖大赛名称" },
-  { key: "level", label: "获奖等级（如 一等奖 / 银奖 / 金牌）" },
-  { key: "date", label: "获奖时间" },
+  { key: "name", label: "竞赛名称" },
+  { key: "level", label: "获奖等级" },
+  { key: "date", label: "获奖时间", date: true },
+  { key: "category", label: "奖项类别" },
   { key: "description", label: "竞赛描述", textarea: true },
 ];
+// 字段顺序 / 标签已对齐网页落地版
 const SOCIAL_FIELDS = [
-  { key: "platform", label: "平台（如 GitHub/知乎/微博）" },
-  { key: "account", label: "账号 / ID / UID" },
-  { key: "link", label: "链接 / URL" },
+  { key: "platform", label: "平台" },
+  { key: "account", label: "账号" },
+  { key: "link", label: "链接" },
 ];
+// 字段顺序 / 标签已对齐网页落地版（文件移到描述之前）
 const CERT_FIELDS = [
   { key: "name", label: "证书名称" },
-  { key: "date", label: "获得时间" },
-  { key: "description", label: "证书描述（编号/颁发机构，可留空）", textarea: true },
-  { key: "file", label: "证书文件（有就上传，没有留空）", file: true },
+  { key: "date", label: "获得时间", date: true },
+  { key: "file", label: "证书文件", file: true },
+  { key: "description", label: "证书描述", textarea: true },
 ];
+// 字段顺序 / 标签已对齐网页落地版（文件移到简介之前）
 const PATENT_FIELDS = [
-  { key: "type", label: "成果类型（发明专利/实用新型/软著等）" },
-  { key: "name", label: "成果名称/专利名称" },
-  { key: "regNo", label: "登记号/专利号" },
-  { key: "date", label: "登记日期（YYYY.MM）" },
-  { key: "rank", label: "发明人排名（如 第一发明人/3/5）" },
+  { key: "type", label: "成果类型" },
+  { key: "name", label: "成果名称" },
+  { key: "regNo", label: "登记号" },
+  { key: "date", label: "登记日期", date: true },
+  { key: "rank", label: "发明人排名" },
+  { key: "file", label: "专利文件", file: true },
   { key: "summary", label: "核心简介", textarea: true },
-  { key: "file", label: "专利文件（有就上传，没有留空）", file: true },
 ];
 const SKILL_FIELDS = [{ key: "name", label: "技能" }];
+// 字段顺序 / 标签已对齐网页落地版（奖项名称→获奖时间→奖项类别→级别→奖项描述）
 const AWARD_FIELDS = [
-  { key: "category", label: "奖项类型", options: ["奖学金", "竞赛获奖", "评优表彰"] },
-  { key: "level", label: "级别", options: ["国际级", "国家级", "省部级", "省级", "市级", "校级", "院系级", "企业级", "其他"] },
   { key: "name", label: "奖项名称" },
-  { key: "date", label: "获奖时间" },
+  { key: "date", label: "获奖时间", date: true },
+  { key: "category", label: "奖项类别", options: ["奖学金", "竞赛获奖", "评优表彰"] },
+  { key: "level", label: "级别", options: ["国际级", "国家级", "省部级", "省级", "市级", "校级", "院系级", "企业级", "其他"] },
   { key: "description", label: "奖项描述", textarea: true },
-];
-const CUSTOM_FIELDS = [
-  { key: "k", label: "字段名" },
-  { key: "v", label: "字段值" },
 ];
 const ALL_LIST_FIELDS = {
   education: EDU_FIELDS,
@@ -1727,19 +1904,61 @@ const ALL_LIST_FIELDS = {
   skills: SKILL_FIELDS,
   awards: AWARD_FIELDS,
   patents: PATENT_FIELDS,
-  custom: CUSTOM_FIELDS,
 };
 
-// 统一构造下拉框（BASIC_FIELDS / INTERN_FIELDS 等用 f.options 声明选项）
+// 统一构造下拉框（替代原生 select，UI 与 webapp 一致）：隐藏 input 存值 + 自定义浮层
 function buildSelectHtml(f, current) {
-  const opts = (f.options || [])
-    .map((o) => `<option value="${escapeHtml(o)}" ${o === current ? "selected" : ""}>${escapeHtml(o)}</option>`)
-    .join("");
-  const onchange = f.allowOther
-    ? ` onchange="var o=this.parentNode.querySelector('[data-other=${f.key}]');if(o)o.style.display=this.value==='其他'?'block':'none'"`
-    : "";
-  return `<select class="edit-input" data-key="${f.key}"${onchange}><option value="">（不填）</option>${opts}</select>`;
+  const cur = current || "";
+  if (f.allowOther) {
+    const opts = (f.options || [])
+      .map((o) => `<option value="${escapeHtml(o)}" ${o === current ? "selected" : ""}>${escapeHtml(o)}</option>`)
+      .join("");
+    return `<select class="edit-input" data-key="${f.key}"><option value="">（不填）</option>${opts}</select>`;
+  }
+  const opts = (f.options || []).map((o) => {
+    const v = String(o);
+    return `<span class="dd-opt${v === cur ? " selected" : ""}" data-v="${escapeHtml(v)}">${escapeHtml(v)}</span>`;
+  }).join("");
+  return `<span class="dd" data-dd="${f.key}">
+    <input type="hidden" class="dd-val" data-key="${f.key}" value="${escapeHtml(cur)}">
+    <span class="dd-trigger edit-input"><span class="dd-text${cur ? "" : " placeholder"}">${escapeHtml(cur) || "（不填）"}</span><span class="dd-arrow">▾</span></span>
+    <span class="dd-panel" hidden><span class="dd-opt${"" === cur ? " selected" : ""}" data-v="">（不填）</span>${opts}</span>
+  </span>`;
 }
+// 自定义下拉全局交互：点触发展开 / 点选项存值 / 点外部关闭
+document.addEventListener("click", (e) => {
+  const trigger = e.target.closest(".dd-trigger");
+  if (trigger) {
+    const dd = trigger.closest(".dd");
+    const panel = dd.querySelector(".dd-panel");
+    const willOpen = panel.hidden;
+    document.querySelectorAll(".dd-panel:not([hidden])").forEach((p) => { if (p !== panel) p.hidden = true; });
+    document.querySelectorAll(".dd-trigger.open").forEach((t) => { if (t !== trigger) t.classList.remove("open"); });
+    panel.hidden = !willOpen;
+    trigger.classList.toggle("open", willOpen);
+    e.stopPropagation();
+    return;
+  }
+  const opt = e.target.closest(".dd-opt");
+  if (opt) {
+    const dd = opt.closest(".dd");
+    const hidden = dd.querySelector(".dd-val");
+    const text = dd.querySelector(".dd-text");
+    const v = opt.getAttribute("data-v") || "";
+    hidden.value = v;
+    text.textContent = v || "（不填）";
+    text.classList.toggle("placeholder", !v);
+    dd.querySelectorAll(".dd-opt").forEach((o) => o.classList.remove("selected"));
+    opt.classList.add("selected");
+    dd.querySelector(".dd-panel").hidden = true;
+    dd.querySelector(".dd-trigger").classList.remove("open");
+    hidden.dispatchEvent(new Event("change"));
+    e.stopPropagation();
+    return;
+  }
+  document.querySelectorAll(".dd-panel:not([hidden])").forEach((p) => (p.hidden = true));
+  document.querySelectorAll(".dd-trigger.open").forEach((t) => t.classList.remove("open"));
+});
 
 function renderBasic(basic) {
   const c = $("basicEditor");
@@ -1747,6 +1966,12 @@ function renderBasic(basic) {
   BASIC_FIELDS.forEach((f) => {
     const row = document.createElement("div");
     row.className = "field-row";
+    if (f.key === "birth") {
+      row.innerHTML = `<label class="field-label">${f.label}</label><div class="month-single" data-month="${f.key}"></div>`;
+      c.appendChild(row);
+      renderMonthPicker(row.querySelector(".month-single"), f.key, basic[f.key]);
+      return;
+    }
     if (f.cascade) {
       row.innerHTML = `<label class="field-label">${f.label}</label><div class="cascade-row" data-cascade="${f.key}"></div>`;
       c.appendChild(row);
@@ -1759,19 +1984,17 @@ function renderBasic(basic) {
         <input class="edit-input" data-key="${f.key}" value="${escapeHtml(basic[f.key] || "")}">`;
       c.appendChild(row);
     }
-    if (f.key === "targetPosition") {
-      const w = document.createElement("div");
-      w.className = "warn-red";
-      w.textContent = "⚠ 每次投递前请确认岗位是否一致，避免投错（例如投运营却填了算法岗）";
-      c.appendChild(w);
-    }
     if (f.key === "idNumber") {
-      const w = document.createElement("div");
-      w.className = "warn-red";
-      w.textContent = "🔒 证件号码只保存在本机浏览器，AI 字段匹配时会自动脱敏、不会上传；填表由插件本地完成。不需要可留空。";
-      c.appendChild(w);
+      const wn = document.createElement("div");
+      wn.className = "warn-red";
+      wn.textContent = "🔒 证件号码只保存在本机浏览器，AI 字段匹配时会自动脱敏、不会上传；填表由插件本地完成。不需要可留空。";
+      c.appendChild(wn);
     }
   });
+  const w = document.createElement("div");
+  w.className = "warn-red";
+  w.textContent = "⚠ 每次投递前请确认岗位是否一致，避免投错（例如投运营却填了算法岗）";
+  c.appendChild(w);
 }
 
 function renderEducation(items) {
@@ -1817,6 +2040,8 @@ function createEduCard(item, idx) {
         <button class="btn-remove-file" type="button">× 移除</button>
         <input type="hidden" data-key="${f.key}" value="${escapeHtml(saved)}">
       </div>`;
+    } else if (f.date) {
+      input = `<div class="month-single" data-month="${f.key}"></div>`;
     } else {
       input = `<input class="edit-input" data-key="${f.key}" value="${val}" placeholder="${f.label}">`;
     }
@@ -1852,6 +2077,11 @@ function createEduCard(item, idx) {
     toggle.textContent = edit.classList.contains("open") ? "收起" : "编辑";
   });
   card.querySelector(".edu-del").addEventListener("click", () => card.remove());
+  EDU_FIELDS.forEach((f) => {
+    if (!f.date) return;
+    const box = card.querySelector(`[data-month="${f.key}"]`);
+    if (box) renderMonthPicker(box, f.key, item[f.key]);
+  });
   return card;
 }
 
@@ -1868,7 +2098,8 @@ function renderList(id, items, fields) {
 function createCard(item, fields, num) {
   const card = document.createElement("div");
   card.className = "edit-card";
-  let html = `<div class="edit-card-header"><span class="edit-card-title">${fields[0].label} #${num}</span><span class="card-acts"><button class="btn-up-card" type="button" title="上移">↑</button><button class="btn-down-card" type="button" title="下移">↓</button><button class="btn-del-small">删除</button></span></div>`;
+  const titleLabel = (fields === SOCIAL_FIELDS) ? "社交账号" : fields[0].label;
+  let html = `<div class="edit-card-header"><span class="edit-card-title">${titleLabel} #${num}</span><span class="card-acts"><button class="btn-up-card" type="button" title="上移">↑</button><button class="btn-down-card" type="button" title="下移">↓</button><button class="btn-del-small">删除</button></span></div>`;
   fields.forEach((f) => {
     const val = escapeHtml(item[f.key] || "");
     let input;
@@ -1888,12 +2119,19 @@ function createCard(item, fields, num) {
       }
     } else if (f.textarea) {
       input = `<textarea class="edit-textarea" data-key="${f.key}">${val}</textarea>`;
+    } else if (f.date) {
+      input = `<div class="month-single" data-month="${f.key}"></div>`;
     } else {
       input = `<input class="edit-input" data-key="${f.key}" value="${val}" placeholder="${f.label}">`;
     }
     html += `<div class="field-row"><label class="field-label">${f.label}</label>${input}</div>`;
   });
   card.innerHTML = html;
+  fields.forEach((f) => {
+    if (!f.date) return;
+    const box = card.querySelector(`[data-month="${f.key}"]`);
+    if (box) renderMonthPicker(box, f.key, item[f.key]);
+  });
   // 级联下拉：源字段变化 → 目标字段选项联动（如 语种 → 语言考试）
   fields.forEach((f) => {
     if (f.cascadeFrom && f.cascadeMap) {
@@ -1965,15 +2203,14 @@ function relocateAddButtons() {
     if (!editor) editor = group.querySelector(".edit-list");
     const foot = document.createElement("div");
     foot.className = "add-foot";
-    const nb = document.createElement("button");
-    nb.className = "btn-add-foot";
-    nb.textContent = "＋ 添加一条";
-    if (btn.dataset.section) nb.dataset.section = btn.dataset.section;
-    if (btn.id) nb.id = btn.id; // 保留作品集 addWorkBtn 的 id，其专属监听照常生效
-    foot.appendChild(nb);
+    // 移动原节点（appendChild 会保留节点及其已绑定的事件监听），不要用新建节点替换，
+    // 否则原按钮上的 click 监听（如作品集 addWorkBtn 的「+ 添加」）会随旧节点被移除而失效。
+    btn.classList.add("btn-add-foot");
+    btn.classList.remove("btn-add-small");
+    btn.textContent = "＋ 添加一条";
+    foot.appendChild(btn);
     if (editor && editor.parentNode) editor.parentNode.insertBefore(foot, editor.nextSibling);
     else group.appendChild(foot);
-    btn.remove();
   });
 }
 
@@ -2141,8 +2378,7 @@ function collectProfileFromEditor() {
     intent: collectKV("intentEditor", INTENT_FIELDS),
     reference: collectKV("referenceEditor", REFERENCE_FIELDS),
     aiSkills: collectKV("aiSkillsEditor", AI_SKILL_FIELDS),
-    devLang: collectKV("devLangEditor", DEV_LANG_FIELDS),
-    customFields: collectList("customEditor", CUSTOM_FIELDS),
+    devLang: collectDevLang(),
   };
 }
 function collectEducation() {
@@ -2215,6 +2451,64 @@ function renderSkills(items) {
   });
   wrap.appendChild(input);
   c.appendChild(wrap);
+  c.appendChild(buildSugRow(SKILL_PRESETS, wrap, input));
+}
+function renderDevLang(obj) {
+  const c = $("devLangEditor");
+  if (!c) return;
+  c.innerHTML = "";
+  const wrap = document.createElement("div");
+  wrap.className = "skill-tags";
+  const seed = (obj && obj.langs ? String(obj.langs) : "");
+  seed.split(/[、,，;；]+/).map((s) => s.trim()).filter(Boolean).forEach((name) => {
+    if (name) wrap.appendChild(makeSkillChip(name));
+  });
+  const input = document.createElement("input");
+  input.className = "skill-input";
+  input.placeholder = "输入开发语言后回车添加";
+  input.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const v = input.value.trim();
+      if (v) { wrap.insertBefore(makeSkillChip(v), input); input.value = ""; }
+    }
+  });
+  wrap.appendChild(input);
+  c.appendChild(wrap);
+  c.appendChild(buildSugRow(DEV_LANG_PRESETS, wrap, input));
+}
+// 预设常用项：点一下把该项加为标签（去重）；targetWrap 里 label 在 input 之前
+function buildSugRow(presets, targetWrap, input) {
+  const row = document.createElement("div");
+  row.className = "sug-row";
+  const lab = document.createElement("span");
+  lab.className = "sug-label";
+  lab.textContent = "常用：";
+  row.appendChild(lab);
+  presets.forEach((p) => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "sug-chip";
+    chip.textContent = p;
+    chip.addEventListener("click", () => {
+      const exists = Array.from(targetWrap.querySelectorAll(".skill-chip")).some(
+        (ch) => (ch.firstChild ? ch.firstChild.textContent : "").trim() === p
+      );
+      if (!exists) targetWrap.insertBefore(makeSkillChip(p), input);
+    });
+    row.appendChild(chip);
+  });
+  return row;
+}
+function collectDevLang() {
+  const arr = [];
+  const c = $("devLangEditor");
+  if (!c) return { langs: "" };
+  c.querySelectorAll(".skill-chip").forEach((chip) => {
+    const t = (chip.firstChild ? chip.firstChild.textContent : "").trim();
+    if (t) arr.push(t);
+  });
+  return { langs: arr.join("、") };
 }
 function collectSkills() {
   const arr = [];
