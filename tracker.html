@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <title>投递追踪 - 秋招网申助手</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", sans-serif;
+      color: #1f2329; font-size: 13px; background: #f7f8fa; padding: 20px;
+    }
+    .container { max-width: 1100px; margin: 0 auto; }
+    h1 { font-size: 22px; margin-bottom: 6px; }
+    .sub { color: #646a73; margin-bottom: 16px; }
+    .toolbar {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 14px;
+      background: #fff; padding: 12px; border-radius: 10px;
+    }
+    input, select, button {
+      border: 1px solid #dcdfe6; border-radius: 6px; padding: 7px 10px; font-size: 13px;
+    }
+    input { min-width: 160px; }
+    button { background: #6b4cf0; color: #fff; border: none; cursor: pointer; }
+    button.secondary { background: #eef2f7; color: #6b4cf0; }
+    table {
+      width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px;
+      overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+    th, td { padding: 10px 12px; text-align: left; border-bottom: 1px solid #f0f0f0; }
+    th { background: #f7f8fa; color: #646a73; font-weight: 600; font-size: 12px; }
+    tr:hover { background: #fafbfc; }
+    td input, td select { width: 100%; border-color: transparent; background: transparent; }
+    td input:hover, td select:hover, td input:focus, td select:focus { background: #fff; border-color: #6b4cf0; }
+    .link-cell a { color: #6b4cf0; text-decoration: none; }
+    .link-cell a:hover { text-decoration: underline; }
+    .link-short { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: inline-block; }
+    .del-btn { background: #fff0f0; color: #c24; padding: 4px 10px; font-size: 12px; }
+    .empty { text-align: center; color: #999; padding: 40px; }
+    .stats { display: flex; gap: 16px; margin-bottom: 14px; }
+    .stat { background: #fff; padding: 10px 16px; border-radius: 10px; }
+    .stat b { color: #6b4cf0; font-size: 18px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>投递追踪</h1>
+    <div class="sub">记录你投了哪些岗位、当前进度。打开招聘页时插件会自动抓取企业与岗位名。</div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="toolbar">
+      <input id="searchInput" placeholder="搜索企业 / 岗位 / 状态">
+      <button id="addBtn">手动添加</button>
+      <button id="captureBtn" class="secondary">抓取当前招聘页</button>
+      <button id="exportBtn" class="secondary">导出 CSV</button>
+    </div>
+
+    <table>
+      <thead>
+        <tr>
+          <th style="width:110px">投递时间</th>
+          <th style="width:140px">企业</th>
+          <th style="width:180px">岗位</th>
+          <th style="width:110px">状态</th>
+          <th>投递链接</th>
+          <th style="width:70px">操作</th>
+        </tr>
+      </thead>
+      <tbody id="appTable"></tbody>
+    </table>
+    <div id="empty" class="empty" style="display:none">还没有投递记录，点「手动添加」或「抓取当前招聘页」开始记录。</div>
+  </div>
+
+  <script>
+    const STATUS_OPTS = ["已投递", "简历过筛", "一面", "二面", "三面", "终面", "Offer", "已挂", "放弃"];
+    let apps = [];
+
+    function $(id) { return document.getElementById(id); }
+
+    function loadApps() {
+      chrome.storage.local.get("applications", (r) => {
+        apps = r.applications || [];
+        render();
+      });
+    }
+    function saveApps() {
+      chrome.storage.local.set({ applications: apps });
+    }
+
+    function formatDate(d) {
+      const now = d ? new Date(d) : new Date();
+      return now.toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+    }
+
+    function escapeHtml(str) {
+      if (!str) return "";
+      return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function render() {
+      const q = ($("searchInput").value || "").trim().toLowerCase();
+      const filtered = apps.filter((a) =>
+        !q ||
+        (a.company || "").toLowerCase().includes(q) ||
+        (a.position || "").toLowerCase().includes(q) ||
+        (a.status || "").toLowerCase().includes(q)
+      );
+
+      $("appTable").innerHTML = "";
+      $("empty").style.display = filtered.length ? "none" : "block";
+
+      // stats
+      const counts = {};
+      STATUS_OPTS.forEach((s) => (counts[s] = 0));
+      apps.forEach((a) => { if (counts[a.status] !== undefined) counts[a.status]++; });
+      const total = apps.length;
+      const active = total - (counts["已挂"] || 0) - (counts["放弃"] || 0);
+      $("stats").innerHTML = `
+        <div class="stat">总投递 <b>${total}</b></div>
+        <div class="stat">进行中 <b>${active}</b></div>
+        <div class="stat">Offer <b>${counts["Offer"] || 0}</b></div>
+        <div class="stat">已挂 <b>${counts["已挂"] || 0}</b></div>
+      `;
+
+      filtered.forEach((app) => {
+        const tr = document.createElement("tr");
+        const statusOpts = STATUS_OPTS.map((s) => `<option ${s === app.status ? "selected" : ""}>${s}</option>`).join("");
+        tr.innerHTML = `
+          <td>${formatDate(app.time)}</td>
+          <td><input value="${escapeHtml(app.company)}" data-f="company"></td>
+          <td><input value="${escapeHtml(app.position)}" data-f="position"></td>
+          <td><select data-f="status">${statusOpts}</select></td>
+          <td class="link-cell">${renderLink(app.url)}</td>
+          <td><button class="del-btn" data-id="${app.id}">删除</button></td>
+        `;
+        tr.querySelectorAll("[data-f]").forEach((el) => {
+          el.addEventListener("change", () => { app[el.dataset.f] = el.value; saveApps(); render(); });
+        });
+        const urlTd = tr.querySelector(".link-cell");
+        urlTd.addEventListener("click", () => {
+          const newUrl = prompt("修改投递链接：", app.url || "");
+          if (newUrl !== null) { app.url = newUrl; saveApps(); render(); }
+        });
+        tr.querySelector(".del-btn").addEventListener("click", () => {
+          apps = apps.filter((a) => a.id !== app.id);
+          saveApps();
+          render();
+        });
+        $("appTable").appendChild(tr);
+      });
+    }
+
+    function renderLink(url) {
+      if (!url) return `<span style="color:#999">点击添加链接</span>`;
+      const short = escapeHtml(url.length > 35 ? url.slice(0, 32) + "…" : url);
+      return `<a href="${escapeHtml(url)}" target="_blank" class="link-short" title="${escapeHtml(url)}">${short}</a>`;
+    }
+
+    $("addBtn").addEventListener("click", () => {
+      apps.unshift({ id: Date.now(), company: "", position: "", url: "", status: "已投递", time: Date.now() });
+      saveApps();
+      render();
+    });
+
+    $("captureBtn").addEventListener("click", () => {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const t = tabs[0];
+        if (!t) return;
+        const title = t.title || "";
+        let company = title.replace(/(求职简历|招聘|职位|career|jobs|招聘官网|申请|校园招聘|社会招聘).*$/i, "").trim();
+        company = company.slice(0, 30);
+        apps.unshift({
+          id: Date.now(),
+          company,
+          position: "",
+          url: t.url || "",
+          status: "已投递",
+          time: Date.now(),
+        });
+        saveApps();
+        render();
+      });
+    });
+
+    $("searchInput").addEventListener("input", render);
+
+    $("exportBtn").addEventListener("click", () => {
+      const rows = [["投递时间", "企业", "岗位", "状态", "投递链接"]];
+      apps.forEach((a) => rows.push([formatDate(a.time), a.company || "", a.position || "", a.status || "", a.url || ""]));
+      const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+      const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `投递记录_${new Date().toLocaleDateString("zh-CN")}.csv`;
+      a.click();
+    });
+
+    loadApps();
+  </script>
+</body>
+</html>

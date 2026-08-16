@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "秋招网申助手",
+  "version": "0.8.10",
+  "description": "根据你的简历详细文档，借助 DeepSeek 自动识别并填充各大招聘官网的表单。",
+  "permissions": ["storage", "activeTab", "scripting", "tabs", "unlimitedStorage", "windows"],
+  "host_permissions": ["https://api.deepseek.com/*", "https://forminit.com/*", "https://formspree.io/*", "https://getform.io/*", "https://*/"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "web_accessible_resources": [
+    {
+      "resources": ["popup.html", "tracker.html", "pdf.worker.min.js", "districts.json"],
+      "matches": ["<all_urls>"]
+    }
+  ],
+  "action": {
+    "default_title": "秋招网申助手（点击在页面打开面板）"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

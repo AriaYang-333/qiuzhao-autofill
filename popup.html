@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>秋招网申助手</title>
+  <link rel="stylesheet" href="popup.css">
+  <style>
+    .import-panel { margin: 8px 0 4px; border: 1px dashed #5a6573; border-radius: 8px; padding: 10px; background: #11161d; }
+    .import-textarea { width: 100%; height: 120px; box-sizing: border-box; font-family: ui-monospace, Menlo, monospace; font-size: 12px; line-height: 1.5; color: #e6edf3; background: #0b0f14; border: 1px solid #2a313c; border-radius: 6px; padding: 8px; resize: vertical; }
+    .import-actions { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
+    .import-status { font-size: 12px; }
+    .import-panel code { background: #0b0f14; padding: 1px 5px; border-radius: 4px; color: #9da7b3; }
+  </style>
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true">
+    <symbol id="i-logo" viewBox="0 0 24 24"><path d="M12 3l1.8 4.4L18 9.2l-4.2 1.8L12 15l-1.8-4L6 9.2l4.2-1.8z"/><path d="M19 14l.8 2 2 .8-2 .8-.8 2-.8-2-2-.8 2-.8z" opacity=".7"/></symbol>
+    <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="M17 8l-5-5-5 5"/><path d="M12 3v12"/></symbol>
+    <symbol id="i-doc" viewBox="0 0 24 24"><path d="M14 3v5h5"/><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M16 13H8M16 17H8M10 9H8"/></symbol>
+    <symbol id="i-profile" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-feedback" viewBox="0 0 24 24"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></symbol>
+    <symbol id="i-data" viewBox="0 0 24 24"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/></symbol>
+    <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  </svg>
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo"><span class="brand-mark"><svg viewBox="0 0 24 24" style="width:18px;height:18px"><use href="#i-logo"/></svg></span><span>秋招网申助手</span></div>
+      <div class="sub">简历 PDF → 详细文档 → 确认档案 → 一键投递</div>
+    </div>
+    <div class="topbar-actions">
+      <span id="topStatus" class="status"></span>
+      <button id="closePopup" class="btn-close" title="关闭">×</button>
+    </div>
+  </header>
+
+  <div id="updateBanner" class="update-banner" hidden>
+    <span class="update-icon">❗</span>
+    <span class="update-text">开发者更新了 v<span id="updateVersion"></span>：<span id="updateNotes"></span></span>
+    <button id="updateBtn" class="btn btn-mini btn-update">点此更新</button>
+    <button id="updateIgnoreBtn" class="btn-link">忽略</button>
+  </div>
+
+  <div class="api-bar">
+    <input id="apiKey" type="password" placeholder="DeepSeek API Key：sk-xxxxxxxx" autocomplete="off">
+    <button id="saveKey" class="btn btn-mini">保存</button>
+    <span id="keyStatus" class="status"></span>
+  </div>
+  <div class="api-tip">
+    没有 API Key？<a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">点这里去 DeepSeek 官网注册并获取</a>
+  </div>
+
+  <!-- ============ 简历管理（多份，可改名，上限3份） ============ -->
+  <div class="profile-bar">
+    <span class="profile-bar-label">当前简历</span>
+    <select id="profileSelect" class="profile-select"></select>
+    <button id="newProfileBtn" class="btn btn-mini" title="新建一份简历（最多3份）">+ 新建</button>
+    <button id="copyProfileBtn" class="btn btn-mini" title="复制当前简历为新的一份">复制</button>
+    <button id="importProfileBtn" class="btn btn-mini" title="粘贴档案 JSON 一键导入为一份新简历">导入</button>
+    <span class="rename-tip" title="在左侧简历下拉上点右键可重命名">右键重命名</span>
+  </div>
+
+  <!-- 导入档案 JSON：粘贴 full_profile_seed 这类档案对象，新增为一份简历（不覆盖现有） -->
+  <div id="importPanel" class="import-panel" hidden>
+    <div class="hint">粘贴档案 JSON（即 profile.data 对象，如 <code>full_profile_seed.json</code> 全文），点「导入为简历」即新增一份当前简历。</div>
+    <textarea id="importProfileIn" class="import-textarea" placeholder='{ "basic": { ... }, "education": [ ... ], "intent": { ... }, ... }'></textarea>
+    <div class="import-actions">
+      <button id="loadSeedBtn" class="btn btn-mini" title="一键载入内置测试档案（林清越，全字段虚拟数据），无需粘贴">载入内置测试档案</button>
+      <button id="importProfileConfirmBtn" class="btn btn-primary btn-mini">导入为简历</button>
+      <span id="importProfileStatus" class="import-status"></span>
+    </div>
+  </div>
+
+  <!-- 右键菜单：重命名当前简历 -->
+  <div id="resumeCtxMenu" class="ctx-menu" hidden>
+    <button class="ctx-item" data-act="rename">重命名</button>
+  </div>
+  <input id="renameInput" class="rename-input" hidden placeholder="输入新名称">
+
+  <nav class="anchors" id="anchorNav">
+    <a href="#section-resume" data-anchor="resume"><svg class="nav-ico"><use href="#i-upload"/></svg>简历PDF</a>
+    <a href="#section-doc" data-anchor="doc"><svg class="nav-ico"><use href="#i-doc"/></svg>详细文档</a>
+    <a href="#section-profile" data-anchor="profile"><svg class="nav-ico"><use href="#i-profile"/></svg>档案</a>
+    <a href="#edit-basic" class="sub">基本信息</a>
+    <a href="#edit-education" class="sub">教育经历</a>
+    <a href="#edit-internships" class="sub">实习经历</a>
+    <a href="#edit-projects" class="sub">项目经历</a>
+    <a href="#edit-campus" class="sub">校园经历</a>
+    <a href="#edit-works" class="sub">作品集</a>
+    <a href="#edit-awards" class="sub">获奖</a>
+    <a href="#edit-competitions" class="sub">竞赛</a>
+    <a href="#edit-languages" class="sub">语言</a>
+    <a href="#edit-social" class="sub">社交</a>
+    <a href="#edit-certificates" class="sub">证书</a>
+    <a href="#edit-papers" class="sub">论文</a>
+    <a href="#edit-patents" class="sub">发明成果专利</a>
+    <a href="#edit-skills" class="sub">技能</a>
+    <a href="#edit-reference" class="sub">资料证明人</a>
+    <a href="#edit-aiskills" class="sub">AI 应用技能</a>
+    <a href="#edit-devlang" class="sub">开发语言</a>
+    <a href="#edit-selfeval" class="sub">自我评价</a>
+    <a href="#edit-intent" class="sub">求职意向</a>
+    <a href="#edit-custom" class="sub">自定义字段</a>
+  </nav>
+
+  <main class="body" id="mainBody">
+    <!-- ============ 简历 PDF ============ -->
+    <section class="step" id="section-resume">
+      <div class="step-head"><span class="num">1</span><svg class="step-ico"><use href="#i-upload"/></svg><span class="step-title">简历 PDF（用于自动上传）</span></div>
+      <div class="hint">填表时插件会先把简历 PDF 传到招聘页。小文件自动传，大文件帮你点开上传框。</div>
+      <div class="file-row">
+        <div class="file-label">简历 PDF</div>
+        <label class="btn btn-mini file-btn">选择
+          <input id="resumeFile" class="file-input" data-cat="resume" type="file" accept=".pdf,.doc,.docx" hidden>
+        </label>
+        <div class="file-meta" id="meta-resume">未选择</div>
+      </div>
+      <div class="file-row">
+        <div class="file-label">证件照 JPG</div>
+        <label class="btn btn-mini file-btn">选择
+          <input id="photoFile" class="file-input" data-cat="photo" type="file" accept=".jpg,.jpeg,.png" hidden>
+        </label>
+        <div class="file-meta" id="meta-photo">未选择</div>
+      </div>
+      <label class="switch"><input type="checkbox" id="uploadResumeFirst"> 先传简历 PDF，等网站自动解析 6 秒后再填文字</label>
+      <label class="switch"><input type="checkbox" id="autoRestoreWorksAttachments" checked> 刷新页面后自动恢复作品附件到网页</label>
+      <div class="clear-row">
+        <button id="clearAllBtn" class="btn btn-mini btn-danger" title="④ 恢复出厂：删档案+作品+简历PDF+证件照+API Key+设置，不可恢复">④ 恢复出厂（全清空）</button>
+      </div>
+    </section>
+
+    <!-- ============ 详细文档 ============ -->
+    <section class="step" id="section-doc">
+      <div class="step-head"><span class="num">2</span><svg class="step-ico"><use href="#i-doc"/></svg><span class="step-title">导入详细文档（自动解析）</span></div>
+      <div class="hint">上传 Word/PDF 简历详细文档，插件自动提取文字并解析成档案。也可以直接粘贴文字。</div>
+      <div class="row" style="margin-top:6px">
+        <label class="btn btn-mini file-btn">上传 Word / PDF
+          <input id="docFile" type="file" accept=".docx,.pdf" hidden>
+        </label>
+        <span id="docFileStatus" class="status"></span>
+      </div>
+      <textarea id="docText" placeholder="（可选）也可把简历全文、或项目经历详细文档的内容，整段粘贴到这里……"></textarea>
+      <div class="row" style="margin-top:6px">
+        <button id="parseBtn" class="btn btn-primary">解析为简历档案</button>
+        <span id="parseStatus" class="status"></span>
+      </div>
+    </section>
+
+    <!-- ============ 档案确认 ============ -->
+    <section class="step" id="section-profile">
+      <div class="step-head"><span class="num">3</span><svg class="step-ico"><use href="#i-profile"/></svg><span class="step-title">确认解析结果（可修改）</span></div>
+      <div class="hint">请检查解析内容。错了直接改，缺了点对应区块里的「+ 添加」。学历/学习形式直接在下面教育经历里选。</div>
+      <div class="optional-note">💡 选填说明：档案里标「可留空」的字段（如 证件号码、期望薪资、成绩排名、部分证书/专利文件）你不填也完全没问题——插件<strong>不会因为你漏填某项就拒绝一键投递</strong>，投递时只上传你实际填了的内容。</div>
+      <div class="clear-row">
+        <button id="clearTempBtn" class="btn btn-mini" title="① 只清临时缓存：运行缓存（最近打开记录等），不影响档案/作品/文件">① 只清临时缓存</button>
+        <button id="clearProfileBtn" class="btn btn-mini btn-danger" title="③ 清空全部已填：清档案数据+作品+当前网页表单，保留简历PDF/证件照/API Key/设置">③ 清空全部已填（留文件）</button>
+      </div>
+      <div class="clear-note">一键清空四档：① 只清临时缓存 → ② 清当前网页表单（底部）→ ③ 清空全部已填（留文件）→ ④ 恢复出厂（全清）。</div>
+      <div class="editor">
+        <div class="edit-group" id="edit-basic">
+          <div class="edit-title">基本信息</div>
+          <div class="edit-grid" id="basicEditor"></div>
+        </div>
+        <div class="edit-group" id="edit-education">
+          <div class="edit-title">教育经历 <button class="btn-add-small" data-section="education">+ 添加</button></div>
+          <div id="educationEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-internships">
+          <div class="edit-title">实习经历 <button class="btn-add-small" data-section="internships">+ 添加</button></div>
+          <div id="internshipsEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-projects">
+          <div class="edit-title">项目经历 <button class="btn-add-small" data-section="projects">+ 添加</button></div>
+          <div id="projectsEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-campus">
+          <div class="edit-title">校园经历 <button class="btn-add-small" data-section="campus">+ 添加</button></div>
+          <div class="hint">社团、学生工作、志愿组织等。美团有独立的「校园经历」板块；字节跳动 / 蔚来目前没有这一栏，填表时插件会提示你选择「跳过」还是「并入项目经历」。</div>
+          <div id="campusEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-works">
+          <div class="edit-title">作品集 <button id="addWorkBtn" class="btn-add-small">+ 添加</button></div>
+          <div class="hint">支持上传 PDF / ZIP / 7Z / RAR 作品附件。<b>注意：美团的作品集只允许 1 个附件</b>，你放多个时插件默认只传第一个，其余会在填完后弹窗告诉你，需要的话请自己手动补传。建议把多份材料打包成一个 ZIP 再上传。</div>
+          <div id="worksList" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-awards">
+          <div class="edit-title">获奖 <button class="btn-add-small" data-section="awards">+ 添加</button></div>
+          <div id="awardsEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-competitions">
+          <div class="edit-title">竞赛 <button class="btn-add-small" data-section="competitions">+ 添加</button></div>
+          <div class="hint">美团「竞赛」只有一个「获奖大赛」级联下拉，只能从它给定的赛事库里选。插件会按名称自动匹配；库里确实没有的赛事会留空标黄，请你手动选一个最接近的。</div>
+          <div id="competitionsEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-languages">
+          <div class="edit-title">语言能力 <button class="btn-add-small" data-section="languages">+ 添加</button></div>
+          <div id="languagesEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-social">
+          <div class="edit-title">社交账号 <button class="btn-add-small" data-section="social">+ 添加</button></div>
+          <div id="socialEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-certificates">
+          <div class="edit-title">证书 <button class="btn-add-small" data-section="certificates">+ 添加</button></div>
+          <div id="certificatesEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-papers">
+          <div class="edit-title">论文 <button class="btn-add-small" data-section="papers">+ 添加</button></div>
+          <div class="hint">美团「论文」板块要求：论文名称、发表渠道（下拉，如 ASPLOS / ACL）、作者顺序、影响因子、论文链接。没有影响因子可以留空。</div>
+          <div id="papersEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-patents">
+          <div class="edit-title">发明成果专利 <button class="btn-add-small" data-section="patents">+ 添加</button></div>
+          <div class="hint">成果类型 / 成果名称 / 登记号 / 登记日期 / 发明人排名 / 核心简介。填表时插件会在支持该字段的站点（如腾讯「其他关键信息」）填入，无对应字段的站点自动跳过，不会乱填。</div>
+          <div id="patentsEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-skills">
+          <div class="edit-title">技能 <button class="btn-add-small" data-section="skills">+ 添加</button></div>
+          <div id="skillsEditor" class="edit-list"></div>
+        </div>
+        <div class="edit-group" id="edit-reference">
+          <div class="edit-title">资料证明人</div>
+          <div class="hint">腾讯简历的必填三连（证明人 / 身份 / 电话）。可以填实习主管或导师，<b>建议先征得对方同意</b>。不填就留空，插件不会瞎编。</div>
+          <div class="edit-grid" id="referenceEditor"></div>
+        </div>
+        <div class="edit-group" id="edit-aiskills">
+          <div class="edit-title">AI 应用技能</div>
+          <div class="hint">腾讯 2026 校招新增板块，问你常用的 AI 工具 &amp; 模型、与 AI 协作完成的项目、以及作品链接。求 AI 相关岗位的话这块很加分。</div>
+          <div class="edit-grid" id="aiSkillsEditor"></div>
+        </div>
+        <div class="edit-group" id="edit-devlang">
+          <div class="edit-title">开发语言</div>
+          <div class="hint">腾讯、字节等研发岗会把「擅长的开发语言」做成<b>多选标签</b>。这里填了，插件会按你填的自动匹配；留空的，插件一律不填、留给你自己选。</div>
+          <div class="edit-grid" id="devLangEditor"></div>
+        </div>
+        <div class="edit-group" id="edit-selfeval">
+          <div class="edit-title">自我评价</div>
+          <textarea id="selfEvalEditor" class="edit-textarea" rows="3" placeholder="没有可不填"></textarea>
+        </div>
+        <div class="edit-group" id="edit-intent">
+          <div class="edit-title">求职意向</div>
+          <div class="hint">腾讯、字节等站点会把「期望城市 / 面试城市 / 到岗时间 / 实习时长」做成<b>必填</b>。这里填了，插件才会替你填；留空的，插件一律不猜、留给你自己选。</div>
+          <div class="edit-grid" id="intentEditor"></div>
+        </div>
+        <div class="edit-group" id="edit-custom">
+          <div class="edit-title">自定义字段</div>
+          <div class="hint">可添加任意「字段名 + 字段值」覆盖小众投递字段；保存后随档案一并导出。不会自动填进网站，但可在导出档案中查看与迁移。</div>
+          <div id="customEditor"></div>
+          <button class="btn-add-foot" data-section="custom">＋ 添加一条</button>
+        </div>
+      </div>
+      <button id="saveProfileBtn" class="btn btn-primary">保存当前简历</button>
+      <button id="exportProfileBtn" class="btn btn-mini" style="margin-left:8px">导出档案 JSON</button>
+      <div id="saveStatus" class="status"></div>
+    </section>
+
+    <!-- ============ 调试：一键导出页面字段 ============ -->
+    <section class="step dev-only" id="section-debug">
+      <div class="step-head"><span class="num">·</span><svg class="step-ico"><use href="#i-alert"/></svg><span class="step-title">调试：导出页面字段（给开发者看结构）</span></div>
+      <div class="hint">在招聘网页上点下面按钮，会把页面所有输入框/下拉框的「标签、板块、类型、选项」一次性复制出来。把复制的内容发给开发者即可，<b>不用再逐个右键复制 outerHTML</b>。</div>
+      <div class="row" style="margin-top:8px">
+        <button id="exportFieldsBtn" class="btn btn-mini">导出当前页面字段</button>
+        <button id="copyExportBtn" class="btn btn-mini">复制</button>
+        <span id="exportStatus" class="status"></span>
+      </div>
+      <textarea id="exportFieldsOut" class="edit-textarea" style="margin-top:8px;font-size:11px" rows="4" readonly placeholder="导出的字段结构会显示在这里"></textarea>
+      <div class="hint" style="margin-top:10px">诊断：导出插件本地存储（works / fileVault），用于排查「刷新后作品附件丢失」问题。</div>
+      <div class="row" style="margin-top:8px">
+        <button id="exportStorageBtn" class="btn btn-mini">导出插件存储（调试）</button>
+        <span id="exportStorageStatus" class="status"></span>
+      </div>
+      <textarea id="exportStorageOut" class="edit-textarea" style="margin-top:8px;font-size:11px" rows="4" readonly placeholder="works / fileVault 的 JSON 会显示在这里，并自动复制到剪贴板"></textarea>
+    </section>
+
+    <!-- 投递数据收集说明：改为底部灰色小字，不再单独成步/不再强调（同意勾选仍保留，卡一键投递） -->
+    <div class="data-foot" id="section-data">
+      <p>本插件免费。仅本地记录你的投递数据（投了哪些岗位、次数、各平台填充成功率）用于改进产品，<b>不收集任何个人信息</b>。</p>
+      <label class="switch switch-mini"><input type="checkbox" id="shareData"> 我已阅读并同意：仅收集我的投递数据（岗位 / 次数）用于改进插件</label>
+      <span id="dataStatus" class="status"></span>
+    </div>
+
+    <!-- 固定一键投递栏：滚动时常驻可见 -->
+    <div class="fill-bar">
+      <button id="fillBtnBottom" class="btn btn-fill">一键投递（当前简历）</button>
+      <button id="clearPageBtn" class="btn btn-mini btn-danger" title="② 清当前网页表单：清空当前招聘网页已填的表单字段">② 清当前网页表单</button>
+      <div class="tip">投递前请在「档案」里确认「求职意向」岗位是否一致，避免投错。</div>
+    </div>
+  </main>
+
+  <footer class="foot">v0.7.3 · 仅辅助填写，请人工确认后提交 · <button id="openTrackerBtn" class="btn-link">投递记录</button> · <button id="openFloatWindowBtn" class="btn-link">重新打开页面面板</button></footer>
+
+  <script src="pdf.min.js"></script>
+  <script src="clear_data.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

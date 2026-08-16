@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>简历管理台 · 秋招网申助手</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --card:#ffffff; --ink:#1f2430; --sub:#6b7280;
+    --line:#e5e7eb; --primary:#4f46e5; --primary-d:#4338ca;
+    --danger:#ef4444; --radius:12px; --shadow:0 1px 3px rgba(16,24,40,.06),0 1px 2px rgba(16,24,40,.04);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",system-ui,sans-serif}
+  header.top{padding:18px 24px;background:var(--card);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px}
+  header.top h1{font-size:18px;margin:0}
+  header.top .logo{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--primary),#8b5cf6);display:inline-block}
+  header.top .sub{color:var(--sub);font-size:12px}
+  .container{max-width:1180px;margin:0 auto;padding:20px 24px 60px}
+  /* Tabs */
+  .tab-nav{display:flex;gap:8px;background:var(--card);padding:8px;border-radius:var(--radius);box-shadow:var(--shadow);margin-bottom:18px;flex-wrap:wrap}
+  .tab-btn{border:0;background:transparent;color:var(--sub);padding:9px 16px;border-radius:8px;cursor:pointer;font-size:14px;font-weight:500;transition:.15s}
+  .tab-btn:hover{background:#f0f1ff;color:var(--primary)}
+  .tab-btn.active{background:var(--primary);color:#fff}
+  .tab-panel{display:none}
+  /* Cards */
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow);padding:18px 20px;margin-bottom:16px}
+  .card h3{margin:0 0 12px;font-size:15px}
+  .card h4{margin:16px 0 8px;font-size:13px;color:var(--sub)}
+  .hint{color:var(--sub);font-size:12px;margin:6px 0}
+  .row{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-top:10px}
+  label{display:block;margin:10px 0;font-size:13px;color:var(--sub)}
+  label input,label select,label textarea{display:block;width:100%;margin-top:4px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;font:inherit;color:var(--ink);background:#fff}
+  label textarea{min-height:64px;resize:vertical}
+  .btn{border:0;background:var(--primary);color:#fff;padding:9px 16px;border-radius:8px;cursor:pointer;font-weight:500}
+  .btn:hover{background:var(--primary-d)}
+  .mini{border:1px solid var(--line);background:#fff;color:var(--ink);padding:6px 12px;border-radius:7px;cursor:pointer;font-size:13px}
+  .mini:hover{border-color:var(--primary);color:var(--primary)}
+  .mini.danger{color:var(--danger);border-color:#fecaca}
+  /* 简历表单 */
+  .rep-item{border:1px dashed var(--line);border-radius:8px;padding:10px;margin-bottom:10px;position:relative}
+  .rep-item .mini.danger{position:absolute;top:8px;right:8px}
+  /* 投递表 */
+  .toolbar{display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap}
+  table.dt{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden}
+  table.dt th,table.dt td{border-bottom:1px solid var(--line);padding:8px 10px;text-align:left;font-size:13px;vertical-align:middle}
+  table.dt th{background:#fafafe;font-weight:600;color:var(--sub);position:relative;user-select:none}
+  table.dt th[draggable=true]{cursor:grab}
+  .col-x{margin-left:6px;color:#cbd5e1;cursor:pointer}
+  .col-x:hover{color:var(--danger)}
+  .row-x{color:#cbd5e1;cursor:pointer;font-weight:700}
+  .row-x:hover{color:var(--danger)}
+  .cell-input{width:100%;border:1px solid transparent;background:#fafafe;border-radius:6px;padding:5px 7px;font:inherit}
+  .cell-input:focus{border-color:var(--primary);outline:0;background:#fff}
+  table.dt select{border:1px solid var(--line);border-radius:6px;padding:4px 6px;font:inherit;background:#fff}
+  .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-left:6px;vertical-align:middle}
+  .star{cursor:pointer;font-size:16px;color:#f59e0b}
+  /* 统计 */
+  .bar-row{display:flex;align-items:center;gap:10px;margin:6px 0;font-size:13px}
+  .bar-label{width:90px;color:var(--sub);text-align:right;flex:none}
+  .bar-track{flex:1;height:12px;background:#eef0f4;border-radius:6px;overflow:hidden}
+  .bar-fill{display:block;height:100%;border-radius:6px}
+  .bar-num{width:28px;text-align:left;color:var(--sub)}
+  footer{padding:20px 24px;color:var(--sub);font-size:12px;text-align:center}
+  /* 拖拽视觉反馈 */
+  th.dragging,tr.dragging{opacity:.4}
+  th.drag-over{box-shadow:inset 3px 0 0 var(--primary);background:#f0f1ff}
+  tr.drag-over{box-shadow:inset 0 3px 0 var(--primary);background:#f0f1ff}
+  #undoBtn:disabled{cursor:not-allowed}
+  /* 打印样式：仅干净输出投递记录表，屏蔽导航/按钮/页脚 */
+  @media print {
+    header.top,.tab-nav,.toolbar,footer,#tab-info,#tab-upload,#tab-sync,#tab-api,#statsBox{display:none !important}
+    body{background:#fff;color:#000}
+    .container{max-width:none;padding:0 8px}
+    .tab-panel{display:none !important}
+    #tab-delivery{display:block !important}
+    .card{box-shadow:none;border:0;padding:0;margin:0}
+    table.dt{border:1px solid #333;font-size:12px;width:100%}
+    table.dt th,table.dt td{border:1px solid #999;padding:4px 6px;color:#000}
+    table.dt .col-x,table.dt .row-x,table.dt th[draggable]{display:none}
+    tr{break-inside:avoid}
+    .dot{print-color-adjust:exact}
+  }
+</style>
+</head>
+<body>
+<header class="top">
+  <span class="logo"></span>
+  <div>
+    <h1>简历管理台</h1>
+    <div class="sub">秋招网申助手 · 资料编辑 + 投递追踪（Word 解析 → 多站适配 → 投递记录）</div>
+  </div>
+</header>
+
+<div class="container">
+  <nav class="tab-nav" id="tabNav"></nav>
+
+  <!-- 1. 简历信息 -->
+  <section class="tab-panel" id="tab-info">
+    <div id="profileForm"></div>
+    <div class="row"><button class="mini" id="loadSample">载入示例数据</button><span class="hint">用于演示 / 作品集展示</span></div>
+  </section>
+
+  <!-- 2. 简历上传 -->
+  <section class="tab-panel" id="tab-upload">
+    <div class="card">
+      <h3>简历上传</h3>
+      <p class="hint">上传 PDF 简历与证件照（与插件共用同一份数据源）。多版本管理见下方。</p>
+      <label>简历 PDF（≤6MB）<input type="file" accept=".pdf"></label>
+      <label>证件照（≤300KB）<input type="file" accept="image/*"></label>
+      <h4>简历版本</h4>
+      <p class="hint">可保存多份简历，投递时在记录中选择对应版本。</p>
+      <div class="row"><button class="mini">+ 添加简历版本</button></div>
+    </div>
+  </section>
+
+  <!-- 3. 投递记录 -->
+  <section class="tab-panel" id="tab-delivery">
+    <div class="card">
+      <h3>投递记录</h3>
+      <p class="hint">自动记录你填过简历的官网（公司名由域名推断、可改）；岗位 / 状态 / 渠道等由你补全。行业用色块区分，常用行业自动排前。</p>
+      <div id="deliveryTable"></div>
+    </div>
+    <div class="card" id="statsBox"></div>
+  </section>
+
+  <!-- 4. 数据同步 -->
+  <section class="tab-panel" id="tab-sync">
+    <div id="syncPanel"></div>
+  </section>
+
+  <!-- 5. API 设置 -->
+  <section class="tab-panel" id="tab-api">
+    <div id="apiPanel"></div>
+  </section>
+</div>
+
+<footer>本地数据存储于浏览器 localStorage · 不上传任何服务器 · 仅作个人求职管理</footer>
+
+<script src="management.js"></script>
+</body>
+</html>

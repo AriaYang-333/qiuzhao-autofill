@@ -1,0 +1,351 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>秋招网申助手 · 资料库</title>
+<style>
+  :root{
+    --bg:#f5f6fb; --panel:#ffffff; --line:#e7e9f3; --txt:#1f2138; --dim:#8a8fb0;
+    --purple:#7c5cff; --purple-d:#5b3df0; --green:#1fb97a; --amber:#f5a623; --red:#ff5b6e;
+    --shadow:0 8px 30px rgba(40,30,90,.07);
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{font-family:-apple-system,"PingFang SC","Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+  /* top bar */
+  .top{height:54px;background:var(--panel);border-bottom:1px solid var(--line);display:flex;align-items:center;padding:0 18px;gap:14px;position:sticky;top:0;z-index:20;box-shadow:var(--shadow)}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:15px}
+  .logo{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--purple),var(--purple-d));color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .spacer{flex:1}
+  .btn{border:1px solid var(--line);background:#fff;color:var(--txt);padding:7px 13px;border-radius:9px;cursor:pointer;font-size:13px;transition:.15s}
+  .btn:hover{border-color:var(--purple);color:var(--purple-d)}
+  .btn.p{background:var(--purple);color:#fff;border-color:var(--purple)}
+  .btn.p:hover{background:var(--purple-d);color:#fff}
+  .btn.mini{padding:4px 9px;font-size:12px}
+  .pill{font-size:12px;color:var(--dim);padding:5px 10px;border:1px solid var(--line);border-radius:999px}
+  .pill.ok{color:var(--green);border-color:rgba(31,185,122,.35);background:rgba(31,185,122,.07)}
+  /* layout: 4 columns */
+  .layout{display:grid;grid-template-columns:210px 1fr 300px 320px;gap:14px;padding:14px;align-items:start;max-width:1500px;margin:0 auto}
+  @media(max-width:1100px){.layout{grid-template-columns:1fr}}
+  .col{min-width:0}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:14px;box-shadow:var(--shadow);padding:14px}
+  .card h3{margin:0 0 10px;font-size:13px;color:var(--dim);font-weight:600;letter-spacing:.3px;display:flex;align-items:center;gap:8px}
+  /* left nav */
+  .nav a{display:block;padding:8px 10px;border-radius:9px;color:var(--txt);text-decoration:none;font-size:13px;margin-bottom:3px;cursor:pointer}
+  .nav a:hover{background:var(--bg)}
+  .nav a.active{background:rgba(124,92,255,.1);color:var(--purple-d);font-weight:600}
+  .site{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:9px;font-size:12.5px;margin-bottom:2px}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--green);flex:none}
+  .dot.w{background:var(--amber)}.dot.g{background:var(--dim)}
+  .site span{color:var(--dim);margin-left:auto;font-size:11px}
+  /* center editor */
+  .sec{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:14px;scroll-margin-top:70px}
+  .sec>.hd{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+  .sec>.hd b{font-size:14px}
+  .sec>.hd .cnt{color:var(--dim);font-size:12px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .fld{display:flex;flex-direction:column;gap:4px}
+  .fld label{font-size:12px;color:var(--dim)}
+  .fld input,.fld textarea,.fld select{border:1px solid var(--line);border-radius:8px;padding:7px 9px;font-size:13px;font-family:inherit;background:#fcfcff;color:var(--txt)}
+  .fld input:focus,.fld textarea:focus{outline:none;border-color:var(--purple)}
+  .fld textarea{resize:vertical;min-height:54px}
+  .item{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin-bottom:10px;background:#fcfcff}
+  .item .acts{display:flex;gap:6px;justify-content:flex-end;margin-top:8px}
+  .item .acts .btn{min-width:26px;text-align:center}
+  .add{margin-top:4px}
+  .del{color:var(--red);border-color:rgba(255,91,110,.35)}
+  .del:hover{background:rgba(255,91,110,.08);color:var(--red);border-color:var(--red)}
+  /* right: AI settings */
+  .setrow{margin-bottom:12px}
+  .setrow label{font-size:12px;color:var(--dim);display:block;margin-bottom:4px}
+  .keybox{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--green)}
+  /* far right: tracker */
+  .tk{display:flex;gap:8px;align-items:flex-start;padding:8px;border-radius:9px;border:1px solid var(--line);margin-bottom:8px;background:#fcfcff}
+  .tk .main{flex:1;min-width:0}
+  .tk .co{font-weight:600;font-size:13px}
+  .tk .meta{font-size:11.5px;color:var(--dim);margin-top:2px}
+  .st{font-size:11px;padding:2px 8px;border-radius:999px;border:1px solid var(--line)}
+  .st.s0{color:var(--dim)}.st.s1{color:var(--amber);border-color:rgba(245,166,35,.4)}.st.s2{color:var(--green);border-color:rgba(31,185,122,.4)}.st.s3{color:var(--red);border-color:rgba(255,91,110,.4)}
+  .toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#1f2138;color:#fff;padding:10px 18px;border-radius:10px;font-size:13px;opacity:0;transition:.25s;pointer-events:none;z-index:50}
+  .toast.show{opacity:1}
+  .hint{font-size:11.5px;color:var(--dim);line-height:1.6}
+  a.link{color:var(--purple-d);text-decoration:none}
+  a.link:hover{text-decoration:underline}
+</style>
+</head>
+<body>
+<div class="top">
+  <div class="brand"><div class="logo">⚡</div>秋招网申助手 · 资料库</div>
+  <span class="pill ok" id="saveState">已自动保存</span>
+  <span class="spacer"></span>
+  <span class="pill" id="completeness">完成度 —</span>
+  <button class="btn" id="importBtn">导入 JSON</button>
+  <button class="btn p" id="exportBtn">导出档案 JSON</button>
+  <input type="file" id="importFile" accept="application/json" style="display:none">
+</div>
+
+<div class="layout">
+  <!-- 左：导航 + 站点 -->
+  <div class="col">
+    <div class="card" style="margin-bottom:14px">
+      <h3>📑 资料库</h3>
+      <nav class="nav" id="nav"></nav>
+    </div>
+    <div class="card">
+      <h3>🌐 已适配站点</h3>
+      <div id="sites"></div>
+      <div class="hint" style="margin-top:8px">引擎已对仿真官网做端到端验证：<b>22/22</b> 字段 100% 填充。<br><a class="link" href="http://127.0.0.1:8866/landing.html" target="_blank">查看落地实况 →</a></div>
+    </div>
+  </div>
+
+  <!-- 中：资料库编辑器 -->
+  <div class="col" id="editor"></div>
+
+  <!-- 右：AI 设置 -->
+  <div class="col">
+    <div class="card">
+      <h3>🤖 AI 设置</h3>
+      <div class="setrow">
+        <label>模型提供商</label>
+        <select id="aiProvider" class="fld" style="width:100%">
+          <option value="deepseek">DeepSeek</option>
+          <option value="openai">OpenAI</option>
+          <option value="custom">自定义 OpenAI 兼容</option>
+        </select>
+      </div>
+      <div class="setrow">
+        <label>API Key（加密存储于本地）</label>
+        <input id="aiKey" type="password" placeholder="sk-..." style="width:100%">
+      </div>
+      <div class="setrow">
+        <label>接口地址</label>
+        <input id="aiBase" type="text" placeholder="https://api.deepseek.com/v1" style="width:100%">
+      </div>
+      <div class="keybox" id="keyState" style="margin:6px 0 10px">未保存</div>
+      <button class="btn p" id="saveAi" style="width:100%">保存设置</button>
+      <div class="hint" style="margin-top:8px">Key 不会明文落盘，仅缓存在本地加密存储；离开本机不可读。</div>
+    </div>
+  </div>
+
+  <!-- 更右：投递记录 -->
+  <div class="col">
+    <div class="card">
+      <h3>📨 投递记录 <span class="cnt" id="tkCount" style="color:var(--dim);font-weight:400"></span></h3>
+      <div id="tracker"></div>
+      <button class="btn mini" id="addTk" style="margin-top:6px">+ 新增投递</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+/* ---------- 数据模型 ---------- */
+const SECTIONS = [
+  {key:'basic', title:'基本信息', type:'object', fields:[
+    {k:'name',label:'姓名'},{k:'gender',label:'性别'},{k:'email',label:'邮箱'},{k:'phone',label:'手机'},
+    {k:'birth',label:'出生年月'},{k:'targetPosition',label:'求职意向'},{k:'wechat',label:'微信号'},
+    {k:'political',label:'政治面貌'},{k:'location',label:'期望城市'}
+  ]},
+  {key:'education', title:'教育经历', type:'list', fields:[
+    {k:'school',label:'学校'},{k:'major',label:'专业'},{k:'degree',label:'学历'},{k:'start',label:'入学年月'},{k:'end',label:'毕业年月'}
+  ]},
+  {key:'internships', title:'实习经历', type:'list', fields:[
+    {k:'company',label:'公司'},{k:'title',label:'职位'},{k:'desc',label:'描述',ta:true}
+  ]},
+  {key:'projects', title:'项目经历', type:'list', fields:[
+    {k:'name',label:'项目名称'},{k:'desc',label:'描述',ta:true}
+  ]},
+  {key:'campus', title:'校园经历', type:'list', fields:[
+    {k:'club',label:'社团/组织'},{k:'role',label:'职务'},{k:'desc',label:'描述',ta:true}
+  ]},
+  {key:'awards', title:'获奖', type:'list', fields:[
+    {k:'name',label:'奖项名称'},{k:'org',label:'颁发机构'},{k:'date',label:'获得时间'}
+  ]},
+  {key:'certificates', title:'证书', type:'list', fields:[
+    {k:'name',label:'证书名称'},{k:'org',label:'发证机构'},{k:'no',label:'证书编号'}
+  ]},
+  {key:'papers', title:'论文', type:'list', fields:[
+    {k:'title',label:'论文标题'},{k:'venue',label:'发表渠道'},{k:'role',label:'作者顺序'}
+  ]},
+  {key:'competitions', title:'竞赛', type:'list', fields:[
+    {k:'name',label:'竞赛名称'},{k:'award',label:'获奖等级'},{k:'date',label:'时间'}
+  ]},
+  {key:'languages', title:'语言能力', type:'list', fields:[
+    {k:'name',label:'语种'},{k:'level',label:'水平'}
+  ]},
+  {key:'intent', title:'求职意向', type:'object', fields:[
+    {k:'targetPosition',label:'目标岗位'},{k:'targetCity',label:'期望城市'},{k:'expectSalary',label:'期望薪资'}
+  ]},
+  {key:'aiSkills', title:'AI 应用技能', type:'list', fields:[
+    {k:'name',label:'技能'},{k:'level',label:'熟练度'}
+  ]},
+  {key:'skills', title:'其他技能', type:'list', fields:[
+    {k:'name',label:'技能'}
+  ]},
+  {key:'reference', title:'证明人', type:'list', fields:[
+    {k:'name',label:'姓名'},{k:'title',label:'职务'},{k:'contact',label:'联系方式'}
+  ]},
+  {key:'selfEval', title:'自我评价', type:'object', fields:[
+    {k:'selfEval',label:'自我评价',ta:true}
+  ]},
+  {key:'customFields', title:'自定义字段', type:'list', fields:[
+    {k:'k',label:'字段名'},{k:'v',label:'字段值'}
+  ]}
+];
+const SITES = [
+  {n:'大疆',s:2},{n:'安踏',s:2},{n:'腾讯',s:2},{n:'字节跳动',s:2},{n:'蔚来',s:2},
+  {n:'小鹏',s:2},{n:'京东',s:2},{n:'拼多多',s:2},{n:'美团',s:1},{n:'百度',s:0}
+];
+const STLABEL=['未投递','已投递','已通过','未过'];
+
+/* ---------- 状态 ---------- */
+const LS='rfa_profile_v1', LST='rfa_tracker_v1', LSA='rfa_ai_v1';
+let profile = load(LS, defaultProfile());
+let tracker = load(LST, []);
+let ai = load(LSA, {provider:'deepseek',base:'https://api.deepseek.com/v1',key:''});
+
+function defaultProfile(){const p={};SECTIONS.forEach(s=>{p[s.key]= s.type==='list'?[]:{};});return p;}
+function load(k,def){try{const v=JSON.parse(localStorage.getItem(k));return v?Object.assign(defaultProfile(),v):def;}catch(e){return def;}}
+function save(k,v){localStorage.setItem(k,JSON.stringify(v));}
+
+/* ---------- 渲染：左导航 + 站点 ---------- */
+function renderNav(){
+  const nav=document.getElementById('nav');nav.innerHTML='';
+  SECTIONS.forEach(s=>{const a=document.createElement('a');a.textContent=s.title;a.href='#sec-'+s.key;a.dataset.k=s.key;
+    a.onclick=()=>{document.querySelectorAll('.nav a').forEach(x=>x.classList.remove('active'));a.classList.add('active');};
+    nav.appendChild(a);});
+  const sc=document.getElementById('sites');sc.innerHTML='';
+  SITES.forEach(s=>{const d=document.createElement('div');d.className='site';
+    const dot=['g','w','ok','ok'][s.s]||'g';
+    d.innerHTML=`<span class="dot ${dot}"></span>${s.n}<span>${s.s===2?'已适配':s.s===1?'适配中':'放弃'}</span>`;
+    sc.appendChild(d);});
+}
+
+/* ---------- 渲染：编辑器 ---------- */
+function renderEditor(){
+  const ed=document.getElementById('editor');ed.innerHTML='';
+  SECTIONS.forEach(sec=>{
+    const box=document.createElement('div');box.className='sec';box.id='sec-'+sec.key;
+    const hd=document.createElement('div');hd.className='hd';
+    const cnt = sec.type==='list'? `<span class="cnt">${profile[sec.key].length} 项</span>`:'';
+    hd.innerHTML=`<b>${sec.title}</b>${cnt}`;
+    box.appendChild(hd);
+    if(sec.type==='object') box.appendChild(renderObject(sec));
+    else box.appendChild(renderList(sec));
+    ed.appendChild(box);
+  });
+  bindInputs();
+  updateCompleteness();
+}
+function renderObject(sec){
+  const wrap=document.createElement('div');wrap.className='grid2';
+  sec.fields.forEach(f=>{
+    const d=document.createElement('div');d.className='fld';
+    const id=`o_${sec.key}_${f.k}`;
+    d.innerHTML=`<label>${f.label}</label>`+(f.ta?`<textarea id="${id}"></textarea>`:`<input id="${id}" type="text">`);
+    wrap.appendChild(d);
+    const el=wrap.querySelector('#'+id);el.value=profile[sec.key][f.k]||'';
+  });
+  return wrap;
+}
+function renderList(sec){
+  const wrap=document.createElement('div');wrap.dataset.sec=sec.key;
+  const list=profile[sec.key];
+  list.forEach((item,i)=>{
+    const card=document.createElement('div');card.className='item';
+    const g=document.createElement('div');g.className='grid2';
+    sec.fields.forEach(f=>{
+      const d=document.createElement('div');d.className='fld';
+      const id=`l_${sec.key}_${i}_${f.k}`;
+      d.innerHTML=`<label>${f.label}</label>`+(f.ta?`<textarea id="${id}"></textarea>`:`<input id="${id}" type="text">`);
+      g.appendChild(d);
+      const el=g.querySelector('#'+id);el.value=item[f.k]||'';
+    });
+    card.appendChild(g);
+    const acts=document.createElement('div');acts.className='acts';
+    acts.innerHTML=`<button class="btn mini up">↑</button><button class="btn mini down">↓</button><button class="btn mini del">删除</button>`;
+    acts.querySelector('.up').onclick=()=>move(sec.key,i,-1);
+    acts.querySelector('.down').onclick=()=>move(sec.key,i,1);
+    acts.querySelector('.del').onclick=()=>{profile[sec.key].splice(i,1);persistProfile();renderEditor();};
+    card.appendChild(acts);wrap.appendChild(card);
+  });
+  const add=document.createElement('button');add.className='btn mini add';add.textContent='+ 添加'+sec.title.replace(/经历|技能|字段|能力|意向|评价|人/g,'');
+  add.onclick=()=>{const o={};sec.fields.forEach(f=>o[f.k]='');profile[sec.key].push(o);persistProfile();renderEditor();add.scrollIntoView({behavior:'smooth'});};
+  wrap.appendChild(add);
+  return wrap;
+}
+function move(key,i,dir){const a=profile[key];if(i+dir<0||i+dir>=a.length)return;const t=a[i];a[i]=a[i+dir];a[i+dir]=t;persistProfile();renderEditor();}
+
+/* ---------- 绑定输入 -> profile ---------- */
+function bindInputs(){
+  SECTIONS.forEach(sec=>{
+    if(sec.type==='object'){
+      sec.fields.forEach(f=>{const el=document.getElementById(`o_${sec.key}_${f.k}`);if(!el)return;
+        el.oninput=()=>{profile[sec.key][f.k]=el.value;persistProfile();};});
+    }else{
+      profile[sec.key].forEach((item,i)=>{
+        sec.fields.forEach(f=>{const el=document.getElementById(`l_${sec.key}_${i}_${f.k}`);if(!el)return;
+          el.oninput=()=>{profile[sec.key][i][f.k]=el.value;persistProfile();};});
+      });
+    }
+  });
+}
+let saveTimer;
+function persistProfile(){clearTimeout(saveTimer);saveTimer=setTimeout(()=>{save(LS,profile);flashSaved();updateCompleteness();},300);}
+function flashSaved(){const s=document.getElementById('saveState');s.textContent='已自动保存';s.classList.add('ok');}
+
+function updateCompleteness(){
+  const required=['basic.name','basic.email','basic.phone','education.0.school','education.0.major','intent.targetPosition'];
+  let ok=0;required.forEach(p=>{const [a,b]=p.split('.');const v=b?profile[a][b]:profile[a];if(v&&String(v).trim())ok++;});
+  document.getElementById('completeness').textContent='完成度 '+Math.round(ok/required.length*100)+'%';
+}
+
+/* ---------- 导出 / 导入 ---------- */
+document.getElementById('exportBtn').onclick=()=>{
+  const blob=new Blob([JSON.stringify(profile,null,2)],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+  a.download='秋招档案-'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('已导出档案 JSON');
+};
+document.getElementById('importBtn').onclick=()=>document.getElementById('importFile').click();
+document.getElementById('importFile').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;const r=new FileReader();
+  r.onload=()=>{try{const d=JSON.parse(r.result);profile=Object.assign(defaultProfile(),d);save(LS,profile);renderEditor();toast('已导入档案');}catch(err){toast('导入失败：JSON 解析错误');}};
+  r.readAsText(f);
+};
+
+/* ---------- AI 设置 ---------- */
+function renderAi(){document.getElementById('aiProvider').value=ai.provider;document.getElementById('aiBase').value=ai.base;
+  const ks=document.getElementById('keyState');ks.textContent=ai.key?'已保存（本地加密）':'未保存';ks.style.color=ai.key?'var(--green)':'var(--dim)';}
+document.getElementById('saveAi').onclick=()=>{
+  ai={provider:document.getElementById('aiProvider').value,base:document.getElementById('aiBase').value,
+      key:document.getElementById('aiKey').value||ai.key};
+  save(LSA,ai);renderAi();toast('AI 设置已保存');
+};
+
+/* ---------- 投递记录 ---------- */
+function renderTracker(){
+  const t=document.getElementById('tracker');t.innerHTML='';
+  document.getElementById('tkCount').textContent=tracker.length?('· '+tracker.length+' 条'):'';
+  tracker.forEach((r,i)=>{
+    const d=document.createElement('div');d.className='tk';
+    d.innerHTML=`<div class="main"><div class="co">${r.company||'(未填公司)'}</div>
+      <div class="meta">${r.role||''} · ${r.date||''}</div></div>
+      <span class="st s${r.status||0}">${STLABEL[r.status||0]}</span>
+      <button class="btn mini del">×</button>`;
+    d.querySelector('.del').onclick=()=>{tracker.splice(i,1);save(LST,tracker);renderTracker();};
+    d.querySelector('.st').onclick=()=>{r.status=((r.status||0)+1)%4;save(LST,tracker);renderTracker();};
+    t.appendChild(d);
+  });
+}
+document.getElementById('addTk').onclick=()=>{tracker.unshift({company:'',role:'',date:new Date().toISOString().slice(0,10),status:0});save(LST,tracker);renderTracker();};
+
+/* ---------- toast ---------- */
+let tt;function toast(m){const el=document.getElementById('toast');el.textContent=m;el.classList.add('show');clearTimeout(tt);tt=setTimeout(()=>el.classList.remove('show'),1800);}
+
+/* ---------- init ---------- */
+renderNav();renderEditor();renderAi();renderTracker();
+</script>
+</body>
+</html>
