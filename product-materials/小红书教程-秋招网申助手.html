@@ -1,0 +1,487 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>秋招网申助手 · 小红书图文教程</title>
+<style>
+:root{
+  --canvas:#010102;
+  --canvas-2:#0F1011;
+  --surface:#15161A;
+  --surface-2:#1C1E24;
+  --ink:#F7F8F8;
+  --ink-2:#D0D6E0;
+  --ink-3:#8A8F98;
+  --accent:#828FFF;
+  --on-accent:#0B0B0F;
+  --hairline:#23252A;
+  --success:#3FB68B;
+  --danger:#E5656D;
+  --radius:14px;
+  --title-weight:600;
+  --title-tracking:-.037em;
+  --title-leading:1.1;
+  --rhythm:44px;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","SF Pro Text","PingFang SC","Helvetica Neue",sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{background:#1a1a1f;scroll-behavior:smooth}
+body{
+  min-width:1080px;
+  padding:40px 0;
+  display:flex;
+  flex-direction:column;
+  gap:40px;
+  color:var(--ink);
+  font-family:var(--font);
+  -webkit-font-smoothing:antialiased;
+}
+.sheet{
+  width:1080px;
+  height:1440px;
+  flex:none;
+  margin:0 auto;
+  padding:88px 90px;
+  position:relative;
+  overflow:hidden;
+  background:var(--canvas);
+}
+.page-index{
+  position:absolute;
+  top:88px;
+  right:90px;
+  color:var(--ink-3);
+  font-size:30px;
+  font-weight:650;
+}
+.eyebrow{
+  color:var(--accent);
+  font-size:32px;
+  line-height:1;
+  font-weight:700;
+  letter-spacing:.05em;
+}
+.head{margin-top:64px;max-width:900px}
+.head h2{
+  font-size:68px;
+  line-height:1.14;
+  letter-spacing:var(--title-tracking);
+  font-weight:var(--title-weight);
+}
+.head p{
+  margin-top:20px;
+  max-width:850px;
+  color:var(--ink-3);
+  font-size:37px;
+  line-height:1.5;
+  font-weight:520;
+}
+.content{margin-top:46px}
+.bottom-rule{
+  position:absolute;
+  left:90px;right:90px;bottom:70px;
+  height:2px;
+  background:var(--hairline);
+}
+.bottom-rule::after{
+  content:"";
+  position:absolute;
+  right:0;top:-4px;
+  width:10px;height:10px;
+  border-radius:50%;
+  background:var(--accent);
+}
+
+/* 封面 */
+.cover{background:radial-gradient(120% 90% at 85% 8%,#1b1d2e 0%,var(--canvas) 52%)}
+.cover h1{
+  margin-top:150px;
+  max-width:900px;
+  font-size:94px;
+  line-height:1.1;
+  letter-spacing:-.045em;
+  font-weight:var(--title-weight);
+}
+.cover h1 em{font-style:normal;color:var(--accent)}
+.cover .lede{
+  margin-top:32px;
+  max-width:800px;
+  color:var(--ink-2);
+  font-size:40px;
+  line-height:1.5;
+}
+.cover-num{
+  margin-top:110px;
+  display:flex;
+  gap:16px;
+}
+.cover-num span{
+  padding:16px 22px;
+  border-radius:12px;
+  background:var(--surface);
+  color:var(--ink-2);
+  font-size:30px;
+  font-weight:650;
+}
+.cover-num b{color:var(--accent)}
+.cover-result{
+  position:absolute;
+  left:90px;right:90px;
+  bottom:210px;
+  padding:34px 38px;
+  border-radius:24px;
+  background:var(--surface);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  gap:26px;
+  border:2px solid var(--hairline);
+}
+.cover-result span{
+  color:var(--ink-2);
+  font-size:33px;
+  font-weight:600;
+}
+.cover-result b{color:var(--accent);font-size:46px}
+.account{
+  position:absolute;
+  left:90px;bottom:100px;
+  font-size:34px;
+  font-weight:650;
+  color:var(--ink-3);
+}
+
+/* 通用组件 */
+.cards{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.card{
+  min-height:250px;
+  padding:28px;
+  border-radius:var(--radius);
+  background:var(--surface);
+  border:2px solid var(--hairline);
+}
+.card b{color:var(--accent);font-size:30px}
+.card h3{margin-top:20px;font-size:41px;line-height:1.25;font-weight:600}
+.card p{margin-top:16px;color:var(--ink-3);font-size:33px;line-height:1.45}
+
+.cards-2{display:grid;grid-template-columns:repeat(2,1fr);gap:20px}
+.card-2{
+  min-height:300px;
+  padding:30px;
+  border-radius:var(--radius);
+  background:var(--surface);
+  border:2px solid var(--hairline);
+}
+.card-2 b{color:var(--accent);font-size:30px}
+.card-2 h3{margin-top:18px;font-size:40px;line-height:1.25;font-weight:600}
+.card-2 p{margin-top:16px;color:var(--ink-3);font-size:33px;line-height:1.45}
+
+.split{display:grid;grid-template-columns:1fr 1fr;gap:24px}
+.panel{
+  min-height:430px;
+  padding:32px;
+  border:2px solid var(--hairline);
+  border-radius:var(--radius);
+  background:var(--surface);
+}
+.panel h3{font-size:44px;line-height:1.25;font-weight:600}
+.panel ul{margin-top:26px;list-style:none;display:grid;gap:20px}
+.panel li{
+  color:var(--ink-2);
+  font-size:36px;
+  line-height:1.42;
+}
+.panel li::before{
+  content:"";
+  display:inline-block;
+  width:14px;height:14px;
+  margin-right:18px;
+  border-radius:50%;
+  background:var(--accent);
+  transform:translateY(-4px);
+}
+
+.steps{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.step{
+  min-height:350px;
+  padding:28px;
+  border:2px solid var(--hairline);
+  border-radius:var(--radius);
+  background:var(--surface);
+}
+.step span{
+  width:52px;height:52px;
+  display:grid;place-items:center;
+  border-radius:14px;
+  background:var(--accent);
+  color:var(--on-accent);
+  font-size:29px;
+  font-weight:750;
+}
+.step h3{margin-top:26px;font-size:42px;line-height:1.22;font-weight:600}
+.step p{margin-top:16px;color:var(--ink-3);font-size:33px;line-height:1.45}
+
+.code-card{
+  padding:34px 38px;
+  border-radius:20px;
+  background:var(--surface);
+  border:2px solid var(--hairline);
+}
+.code-card pre{
+  white-space:pre-wrap;
+  color:var(--ink-2);
+  font:560 35px/1.55 var(--font);
+}
+.code-card mark{
+  padding:2px 10px;
+  border-radius:8px;
+  background:#232642;
+  color:var(--accent);
+}
+.note{
+  margin-top:24px;
+  padding:22px 26px;
+  border-radius:16px;
+  background:#232642;
+  color:var(--accent);
+  font-size:35px;
+  line-height:1.45;
+  font-weight:620;
+}
+
+.checklist{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.check{
+  min-height:132px;
+  padding:24px;
+  border:2px solid var(--hairline);
+  border-radius:20px;
+  display:grid;
+  grid-template-columns:46px 1fr;
+  gap:16px;
+  color:var(--ink-2);
+  font-size:35px;
+  line-height:1.4;
+  background:var(--surface);
+}
+.check b{
+  width:42px;height:42px;
+  display:grid;place-items:center;
+  border-radius:50%;
+  background:var(--success);
+  color:#fff;
+  font-size:26px;
+}
+
+.timeline{display:grid;gap:20px}
+.tl-row{
+  display:grid;
+  grid-template-columns:76px 1fr;
+  gap:22px;
+  align-items:start;
+}
+.tl-num{
+  width:76px;height:76px;
+  display:grid;place-items:center;
+  border-radius:20px;
+  background:var(--surface);
+  border:2px solid var(--hairline);
+  color:var(--accent);
+  font-size:34px;
+  font-weight:750;
+}
+.tl-body{
+  padding:24px 28px;
+  border-radius:18px;
+  background:var(--surface);
+  border:2px solid var(--hairline);
+}
+.tl-body h3{font-size:39px;font-weight:600;line-height:1.25}
+.tl-body p{margin-top:12px;color:var(--ink-3);font-size:33px;line-height:1.45}
+.tl-body p b{color:var(--ink-2);font-weight:600}
+
+.pill{
+  display:inline-block;
+  padding:10px 20px;
+  border-radius:999px;
+  background:#232642;
+  color:var(--accent);
+  font-size:30px;
+  font-weight:650;
+}
+
+@media print{
+  html,body{background:#000}
+  body{display:block;padding:0}
+  .sheet{margin:0;page-break-after:always}
+}
+</style>
+</head>
+<body>
+
+<!-- ============ P1 封面 ============ -->
+<section class="sheet cover" id="p01">
+  <span class="page-index">01 / 09</span>
+  <div class="eyebrow">秋招网申助手</div>
+  <h1>一份简历<br>自动填进<em>8 家大厂</em><br>网申系统</h1>
+  <p class="lede">秋招求职者专属 · Chrome 插件一键填充，只填不提交，安全可控</p>
+  <div class="cover-num">
+    <span><b>8</b> 家大厂适配</span>
+    <span><b>19</b> 类档案字段</span>
+    <span><b>3</b> 个简历版本</span>
+  </div>
+  <div class="cover-result">
+    <span>手动填表 20–40 分钟/家</span>
+    <b>→</b>
+    <span>一键填充 + 人工核对 2–5 分钟</span>
+  </div>
+  <div class="account">@秋招网申助手</div>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P2 结果预览 ============ -->
+<section class="sheet" id="p02">
+  <span class="page-index">02 / 09</span>
+  <div class="eyebrow">这篇能帮你</div>
+  <header class="head">
+    <h2>秋招填表<br>从「手动地狱」到「一键搞定」</h2>
+    <p>看完这篇，你就能自己装好、配好、填好，全程不碰提交按钮。</p>
+  </header>
+  <main class="content cards">
+    <article class="card"><b>01</b><h3>装好插件</h3><p>Chrome 加载一次，之后所有招聘页都生效。</p></article>
+    <article class="card"><b>02</b><h3>录入简历</h3><p>网页版填一次，可拆成运营版 / 产品版 / 技术版。</p></article>
+    <article class="card"><b>03</b><h3>一键填充</h3><p>打开招聘页，选版本，点一下自动填完。</p></article>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P3 准备 ============ -->
+<section class="sheet" id="p03">
+  <span class="page-index">03 / 09</span>
+  <div class="eyebrow">开始之前</div>
+  <header class="head">
+    <h2>只需要 3 样东西</h2>
+    <p>全部免费，不用注册，不用 API Key。</p>
+  </header>
+  <main class="content split">
+    <section class="panel"><h3>需要准备</h3><ul>
+      <li>一台电脑 + Chrome 浏览器</li>
+      <li>你的简历 Word / PDF（或直接在网页版填）</li>
+      <li>2 分钟耐心（装插件）</li>
+    </ul></section>
+    <section class="panel"><h3>提前知道</h3><ul>
+      <li>插件只填不提交，投递永远是你手动点</li>
+      <li>不碰验证码、不绕过登录</li>
+      <li>数据只存本地，不上传任何服务器</li>
+    </ul></section>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P4 规则 ============ -->
+<section class="sheet" id="p04">
+  <span class="page-index">04 / 09</span>
+  <div class="eyebrow">使用规则</div>
+  <header class="head">
+    <h2>4 条铁律<br>放心用、不会翻车</h2>
+    <p>这些规则写进了产品里，不是口号。</p>
+  </header>
+  <main class="content cards-2">
+    <article class="card-2"><b>01</b><h3>只填有数据的字段</h3><p>档案里没有的（亲友入职、是否调剂等），一律不填，不编造。</p></article>
+    <article class="card-2"><b>02</b><h3>弹窗只点「否/取消」</h3><p>遇到「解析/覆盖/同步更新」类弹窗，自动选否，保护已填内容。</p></article>
+    <article class="card-2"><b>03</b><h3>未填字段标黄</h3><p>填完自动标黄漏项 + 汇总面板，一眼看清哪里没填。</p></article>
+    <article class="card-2"><b>04</b><h3>安全边界清晰</h3><p>只填不提交、不碰验证码、不绕过登录，你可以随时一键清空。</p></article>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P5 执行：安装 ============ -->
+<section class="sheet" id="p05">
+  <span class="page-index">05 / 09</span>
+  <div class="eyebrow">第 1 步</div>
+  <header class="head">
+    <h2>装插件<br>3 分钟搞定</h2>
+    <p>用 GitHub Release 的 zip 安装，免费开源。</p>
+  </header>
+  <main class="content timeline">
+    <div class="tl-row"><div class="tl-num">1</div><div class="tl-body"><h3>下载 zip</h3><p>打开 GitHub 仓库 → Releases → 下载最新版 zip。<br><b>github.com/AriaYang-333/qiuzhao-autofill</b></p></div></div>
+    <div class="tl-row"><div class="tl-num">2</div><div class="tl-body"><h3>解压到固定文件夹</h3><p>解压后别删别移动，Chrome 要一直引用这个目录。</p></div></div>
+    <div class="tl-row"><div class="tl-num">3</div><div class="tl-body"><h3>加载扩展</h3><p>地址栏输 <b>chrome://extensions</b> → 开「开发者模式」→「加载已解压的扩展程序」→ 选解压目录。</p></div></div>
+    <div class="tl-row"><div class="tl-num">4</div><div class="tl-body"><h3>固定到工具栏</h3><p>点拼图图标 → 把「秋招网申助手」固定，之后一键直达。</p></div></div>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P6 执行：建档 ============ -->
+<section class="sheet" id="p06">
+  <span class="page-index">06 / 09</span>
+  <div class="eyebrow">第 2 步</div>
+  <header class="head">
+    <h2>录入简历<br>一次填、多版本复用</h2>
+    <p>网页版填一次，可拆成 3 个版本，投不同岗位用不同版本。</p>
+  </header>
+  <main class="content timeline">
+    <div class="tl-row"><div class="tl-num">1</div><div class="tl-body"><h3>打开网页版资料库</h3><p>本地网页或部署站，进入「资料库」。</p></div></div>
+    <div class="tl-row"><div class="tl-num">2</div><div class="tl-body"><h3>填 19 类档案</h3><p>基本信息 / 教育 / 实习 / 项目 / 获奖 / 语言 / 证书 / 作品集 / 竞赛…</p></div></div>
+    <div class="tl-row"><div class="tl-num">3</div><div class="tl-body"><h3>复制成 3 个版本</h3><p>运营版 / 产品版 / 技术版，各自改目标岗位与经历侧重。</p></div></div>
+    <div class="tl-row"><div class="tl-num">4</div><div class="tl-body"><h3>一键同步到插件</h3><p>点「立即同步到插件」，3 个版本进入插件下拉。</p></div></div>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P7 执行：填充 ============ -->
+<section class="sheet" id="p07">
+  <span class="page-index">07 / 09</span>
+  <div class="eyebrow">第 3 步</div>
+  <header class="head">
+    <h2>招聘页一键填充<br>选版本 → 点一下</h2>
+    <p>已适配：腾讯 / 字节 / 美团 / 京东 / 大疆 / 安踏 / 蔚来 / 小鹏。</p>
+  </header>
+  <main class="content timeline" style="gap:14px">
+    <div class="tl-row"><div class="tl-num" style="width:64px;height:64px;font-size:30px">1</div><div class="tl-body" style="padding:18px 24px"><h3 style="font-size:36px">打开招聘官网简历页</h3><p style="font-size:31px">登录后进入「我的简历 / 编辑简历」。</p></div></div>
+    <div class="tl-row"><div class="tl-num" style="width:64px;height:64px;font-size:30px">2</div><div class="tl-body" style="padding:18px 24px"><h3 style="font-size:36px">点右下角 ✦ 小球</h3><p style="font-size:31px">展开助手卡片，顶部「选择简历版本」下拉选版本。</p></div></div>
+    <div class="tl-row"><div class="tl-num" style="width:64px;height:64px;font-size:30px">3</div><div class="tl-body" style="padding:18px 24px"><h3 style="font-size:36px">点「⚡ 一键投递」</h3><p style="font-size:31px">自动扫描表单、按版本档案逐字段填充，含下拉/日期/级联。</p></div></div>
+    <div class="tl-row"><div class="tl-num" style="width:64px;height:64px;font-size:30px">4</div><div class="tl-body" style="padding:18px 24px"><h3 style="font-size:36px">标黄查漏 + 人工核对</h3><p style="font-size:31px">未填字段自动标黄，你核对后手动点「保存 / 提交」——插件不碰提交。</p></div></div>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P8 进阶：校招情报 ============ -->
+<section class="sheet" id="p08">
+  <span class="page-index">08 / 09</span>
+  <div class="eyebrow">加分项</div>
+  <header class="head">
+    <h2>每天更新的<br>校招情报库</h2>
+    <p>别人还在找企业，你直接看汇总表。</p>
+  </header>
+  <main class="content cards-2">
+    <article class="card-2"><b>01</b><h3>今日 / 昨日新增</h3><p>每天更新企业招聘信息，按更新时间排序，4 点后刷新。</p></article>
+    <article class="card-2"><b>02</b><h3>搜索 / 筛选</h3><p>按公司、岗位、城市、是否免笔试快速筛，直达投递链接。</p></article>
+    <article class="card-2"><b>03</b><h3>投递记录追踪</h3><p>记录投了哪家、什么状态，可导出 Excel / Word / PDF 复盘。</p></article>
+    <article class="card-2"><b>04</b><h3>配合插件闭环</h3><p>情报里看到岗位 → 打开官网 → 一键填充 → 记入投递记录。</p></article>
+  </main>
+  <div class="bottom-rule"></div>
+</section>
+
+<!-- ============ P9 验收 ============ -->
+<section class="sheet" id="p09">
+  <span class="page-index">09 / 09</span>
+  <div class="eyebrow">完成检查</div>
+  <header class="head">
+    <h2>用之前<br>检查这 6 项</h2>
+    <p>都 ✅ 就可以放心投递了。</p>
+  </header>
+  <main class="content checklist">
+    <div class="check"><b>✓</b><span>插件已加载，工具栏能看到图标</span></div>
+    <div class="check"><b>✓</b><span>网页版档案填好并同步到插件</span></div>
+    <div class="check"><b>✓</b><span>招聘页右下角出现 ✦ 小球</span></div>
+    <div class="check"><b>✓</b><span>下拉能选到你要的简历版本</span></div>
+    <div class="check"><b>✓</b><span>填充后未填字段标黄，已人工核对</span></div>
+    <div class="check"><b>✓</b><span>提交按钮是你自己点的（插件不碰）</span></div>
+  </main>
+  <div class="note" style="margin-top:34px">收藏这篇，秋招投递前照着检查一遍，填表时间还给你。</div>
+  <div class="bottom-rule"></div>
+</section>
+
+</body>
+</html>
