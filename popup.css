@@ -32,7 +32,7 @@
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
-html { scroll-behavior: smooth; }
+html { scroll-behavior: auto; }
 body {
   width: 440px;
   font-family: var(--font);
@@ -128,23 +128,16 @@ body {
 .btn-link:hover { color: var(--c-primary-hover); }
 
 /* ============ API / 简历 工具栏 ============ */
-.api-bar, .profile-bar {
+.profile-bar {
   display: flex; align-items: center; gap: 7px;
   padding: 8px 14px; background: var(--c-surface); border-bottom: 1px solid var(--c-border);
 }
-.api-tip {
-  padding: 6px 14px 9px; font-size: 11px; color: var(--c-text-2);
-  background: var(--c-surface); border-bottom: 1px solid var(--c-border);
-}
-.api-tip a { color: var(--c-primary); text-decoration: none; }
-.api-tip a:hover { text-decoration: underline; }
-.api-bar input, .profile-select {
+.profile-select {
   flex: 1; font-size: 12px; padding: 6px 9px; min-width: 0;
   border: 1px solid var(--c-border); border-radius: var(--radius-sm); background: var(--c-surface);
   font-family: inherit; color: var(--c-text);
 }
-.api-bar input:focus, .profile-select:focus { outline: none; border-color: var(--c-primary); box-shadow: var(--ring); }
-.api-bar .status { margin: 0; }
+.profile-select:focus { outline: none; border-color: var(--c-primary); box-shadow: var(--ring); }
 .profile-bar-label { font-size: 12px; color: var(--c-text-2); flex-shrink: 0; font-weight: 500; }
 .profile-select:disabled { opacity: .6; background: var(--c-surface-3); }
 .rename-tip {

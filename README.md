@@ -2,7 +2,7 @@
 
 > Chrome 扩展 + Web 资料库，一份简历自动填进 8 家大厂招聘官网。**只填不提交，安全可控。**
 
-![版本](https://img.shields.io/badge/version-0.8.11-828FFF?style=flat-square)
+![版本](https://img.shields.io/badge/version-0.8.13-828FFF?style=flat-square)
 ![License](https://img.shields.io/badge/license-MIT-blue?style=flat-square)
 ![Chrome MV3](https://img.shields.io/badge/Chrome-MV3-4285F4?style=flat-square&logo=google-chrome&logoColor=white)
 
@@ -59,7 +59,7 @@
 
 ---
 
-## 已适配站点（v0.8.11）
+## 已适配站点（v0.8.13）
 
 | 站点 | 体系 | 严格实测回填率 |
 |---|---|---|

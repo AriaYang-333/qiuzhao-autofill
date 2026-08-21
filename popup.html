@@ -11,7 +11,14 @@
     .import-actions { margin-top: 8px; display: flex; align-items: center; gap: 10px; }
     .import-status { font-size: 12px; }
     .import-panel code { background: #0b0f14; padding: 1px 5px; border-radius: 4px; color: #9da7b3; }
+    /* v0.8.13：基本信息「手机号」拆两格——左区号下拉 + 右手机号（替代独立 cc-bar 黑框） */
+    .phone-split-wrap { display: flex; gap: 8px; flex: 1 1 auto; min-width: 0; align-items: stretch; }
+    .phone-split-wrap .cc-sel { flex: 0 0 96px; background: #0b0f14; color: #e6edf3; border: 1px solid #2a313c; border-radius: 6px; padding: 6px 8px; font-size: 13px; }
+    .phone-split-wrap .cc-sel:focus { outline: none; border-color: #2d6ae0; }
+    .phone-split-wrap input.edit-input { flex: 1 1 auto; min-width: 0; }
+    .phone-split-hint { grid-column: 1 / -1; flex-basis: 100%; font-size: 11px; color: #6b7683; margin-top: 2px; line-height: 1.4; }
   </style>
+  <script src="popup-head.js"></script>
 </head>
 <body>
   <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -30,7 +37,7 @@
     </div>
     <div class="topbar-actions">
       <span id="topStatus" class="status"></span>
-      <a id="openWebBtn" class="btn-web" href="https://ariayang-333.github.io/qiuzhao-autofill/" target="_blank" rel="noopener" title="打开产品网页（功能介绍 / 使用说明）">网页版 ↗</a>
+      <a id="openWebBtn" class="btn-web" href="../product-roadmap/our-plugin-web-v4.html" target="_blank" rel="noopener" title="打开产品网页（功能介绍 / 使用说明 / API 设置）">网页版 ↗</a>
       <button id="closePopup" class="btn-close" title="关闭">×</button>
     </div>
   </header>
@@ -40,15 +47,6 @@
     <span class="update-text">开发者更新了 v<span id="updateVersion"></span>：<span id="updateNotes"></span></span>
     <button id="updateBtn" class="btn btn-mini btn-update">点此更新</button>
     <button id="updateIgnoreBtn" class="btn-link">忽略</button>
-  </div>
-
-  <div class="api-bar">
-    <input id="apiKey" type="password" placeholder="DeepSeek API Key：sk-xxxxxxxx" autocomplete="off">
-    <button id="saveKey" class="btn btn-mini">保存</button>
-    <span id="keyStatus" class="status"></span>
-  </div>
-  <div class="api-tip">
-    没有 API Key？<a href="https://platform.deepseek.com/api_keys" target="_blank" rel="noopener">点这里去 DeepSeek 官网注册并获取</a>
   </div>
 
   <!-- ============ 简历管理（多份，可改名，上限3份） ============ -->
@@ -61,12 +59,11 @@
     <span class="rename-tip" title="在左侧简历下拉上点右键可重命名">右键重命名</span>
   </div>
 
-  <!-- 导入档案 JSON：粘贴 full_profile_seed 这类档案对象，新增为一份简历（不覆盖现有） -->
+  <!-- 导入档案 JSON：粘贴档案 JSON，新增为一份简历（不覆盖现有） -->
   <div id="importPanel" class="import-panel" hidden>
-    <div class="hint">粘贴档案 JSON（即 profile.data 对象，如 <code>full_profile_seed.json</code> 全文），点「导入为简历」即新增一份当前简历。</div>
+    <div class="hint">粘贴档案 JSON（即 profile.data 对象），点「导入为简历」即新增一份当前简历。</div>
     <textarea id="importProfileIn" class="import-textarea" placeholder='{ "basic": { ... }, "education": [ ... ], "intent": { ... }, ... }'></textarea>
     <div class="import-actions">
-      <button id="loadSeedBtn" class="btn btn-mini" title="一键载入内置测试档案（林清越，全字段虚拟数据），无需粘贴">载入内置测试档案</button>
       <button id="importProfileConfirmBtn" class="btn btn-primary btn-mini">导入为简历</button>
       <span id="importProfileStatus" class="import-status"></span>
     </div>
@@ -132,10 +129,10 @@
     <!-- ============ 详细文档 ============ -->
     <section class="step" id="section-doc">
       <div class="step-head"><span class="num">2</span><svg class="step-ico"><use href="#i-doc"/></svg><span class="step-title">导入详细文档（自动解析）</span></div>
-      <div class="hint">上传 Word/PDF 简历详细文档，插件自动提取文字并解析成档案。也可以直接粘贴文字。</div>
+      <div class="hint">上传 Word 简历详细文档，插件自动提取文字并解析成档案。也可以直接粘贴文字。</div>
       <div class="row" style="margin-top:6px">
-        <label class="btn btn-mini file-btn">上传 Word / PDF
-          <input id="docFile" type="file" accept=".docx,.pdf" hidden>
+        <label class="btn btn-mini file-btn">上传 Word
+          <input id="docFile" type="file" accept=".docx" hidden>
         </label>
         <span id="docFileStatus" class="status"></span>
       </div>
@@ -156,6 +153,11 @@
         <button id="clearProfileBtn" class="btn btn-mini btn-danger" title="③ 清空全部已填：清档案数据+作品+当前网页表单，保留简历PDF/证件照/API Key/设置">③ 清空全部已填（留文件）</button>
       </div>
       <div class="clear-note">一键清空四档：① 只清临时缓存 → ② 清当前网页表单（底部）→ ③ 清空全部已填（留文件）→ ④ 恢复出厂（全清）。</div>
+      <div class="edit-group" id="edit-syncedfiles">
+        <div class="edit-title">📎 已从网页同步的文件</div>
+        <div class="hint">网页端上传的成绩单 / 作品 / 证书 / 专利等文件，会随「同步」一并传过来（≤5MB/个）。点击可下载到本机，再手动上传到招聘站。</div>
+        <div id="syncedFilesList" class="edit-list"></div>
+      </div>
       <div class="editor">
         <div class="edit-group" id="edit-basic">
           <div class="edit-title">基本信息</div>

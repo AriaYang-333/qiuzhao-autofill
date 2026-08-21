@@ -7,7 +7,7 @@ const PLUGIN_VERSION = "0.7.0";
 
 // ---------- 通用简历数据结构 ----------
 const RESUME_SCHEMA = `{
-  "basic": { "name": "", "gender": "", "phone": "", "email": "", "location": "", "birth": "", "nationality": "", "hometown": "", "ethnicity": "", "hobbies": "", "targetPosition": "", "idType": "", "idNumber": "", "wechat": "", "qq": "", "emergencyContact": "", "emergencyPhone": "", "emergencyRelation": "", "homepage": "", "idCountry": "", "currentResidence": "", "studyLocation": "", "internshipDuration": "", "weeklyDays": "" },
+  "basic": { "name": "", "gender": "", "phone": "", "email": "", "location": "", "birth": "", "nationality": "", "hometown": "", "ethnicity": "", "politicalStatus": "", "hobbies": "", "targetPosition": "", "idType": "", "idNumber": "", "wechat": "", "qq": "", "emergencyContact": "", "emergencyPhone": "", "emergencyRelation": "", "homepage": "", "idCountry": "", "currentResidence": "", "studyLocation": "", "internshipDuration": "", "weeklyDays": "" },
   "education": [{ "school": "", "major": "", "degree": "", "eduType": "", "start": "", "end": "", "college": "", "lab": "", "tutor": "", "research": "", "rank": "", "gpa": "", "gpaBase": "", "transcript": "" }],
   "internships": [
     {
@@ -49,7 +49,8 @@ const RESUME_SCHEMA = `{
   "selfEval": "",
   "intent": { "expectedCities": [], "interviewCity": "", "availableFrom": "", "internshipDuration": "", "weeklyDays": "", "expectedSalary": "", "acceptOtherCities": "" },
   "reference": { "name": "", "identity": "", "phone": "" },
-  "aiSkills": { "tools": "", "collabProject": "", "link": "" }
+  "aiSkills": { "tools": "", "collabProject": "", "link": "" },
+  "devLang": { "擅长的开发语言": "Python、C++、JavaScript、Go" }
 }`;
 
 const PARSE_SYSTEM =
@@ -89,6 +90,7 @@ const PARSE_SYSTEM =
   "求职意向：必须提取。常见写法分散在「基本信息」或单独「求职意向」板块。expectedCities=期望城市/期望工作城市（可多个，如 [\"北京\",\"上海\",\"深圳\"]，只填城市名不要带省，多个用顿号、逗号、分号分隔）；interviewCity=可参加面试城市/面试城市；availableFrom=最早可到岗时间/到岗时间/可入职时间（如 2026.07、随时）；internshipDuration=可实习时长/实习时间/实习月数（如 6个月、3个月）；weeklyDays=每周可出勤天数/每周出勤/每周工作天数（如 5天、4天）。没有则对应字段留空或空数组，但只要有上述关键词就必须填。" +
   "资料证明人：必须提取。常见标题「资料证明人」「证明人」「推荐人」。reference.name=证明人/证明人姓名；reference.identity=证明人身份/与本人关系/职务（如 硕士导师、部门主管、实习导师）；reference.phone=证明人联系电话/证明人电话。没有则留空，但看到「证明人」关键词就必须输出。" +
   "AI应用技能：必须提取。常见标题「AI应用技能」「常用AI工具」「与AI协作」。aiSkills.tools=常用AI工具&模型/具体工具名称&模型名称（如 Cursor、Copilot、Claude、GPT-5、DeepSeek、Midjourney，多个用顿号/逗号分隔）；aiSkills.collabProject=与AI协作完成的项目或任务/项目目标背景（含目标背景、工具选择原因、你与AI的分工、核心挑战及解决方案、项目结果）；aiSkills.link=相关项目或作品链接/GitHub仓库/个人博客/线上Demo（多个用空格或分号分隔）。没有则留空，但看到「AI工具」「与AI协作」等关键词就必须输出。" +
+  "开发语言：若原文有「开发语言/常用开发语言/擅长的开发语言」板块，提取到 devLang（擅长的开发语言=具体语言名如 Python、C++、JavaScript、Go，多个用顿号或逗号分隔；没有则留空字符串）；没有则留空。" +
   "描述尽量保留原文关键句。必须返回合法的 JSON 对象，不要输出任何解释文字。结构如下：\n" +
   RESUME_SCHEMA;
 
@@ -472,6 +474,10 @@ function mainWorldSetFile(b64, name, mime, attr, token) {
     inp.files = dt.files;
     var n = inp.files ? inp.files.length : 0;
     inp.dispatchEvent(new Event("change", { bubbles: true }));
+    // v0.8.x（字节上传专项）：部分飞书/字节 React 上传组件同时监听 input 事件，
+    // 仅派发 change 时 onChange 偶发不触发 → 文件塞进了 input.files 却没发起上传链路（简历栏空白）。
+    // 补一个冒泡 input 事件兜底，提高字节系上传触发成功率。
+    try { inp.dispatchEvent(new Event("input", { bubbles: true })); } catch (e) {}
 
     // 飞书/字节系拖拽上传组件（.atsx-upload-drag）不听 input.change，只听容器 drop
     try {
@@ -659,4 +665,71 @@ chrome.action.onClicked.addListener((tab) => {
       chrome.tabs.create({ url: chrome.runtime.getURL("popup.html") });
     }
   });
+});
+
+// ===== 网页 ↔ 插件 实时同步通道 =====
+// 网页（http://127.0.0.1 / localhost）修改档案后，通过 chrome.runtime.sendMessage(本扩展ID, {type:'RFA_SYNC', data, versionName})
+// 把当前版本档案推过来，这里直接写进 chrome.storage.local.profiles 的当前激活档案。
+// 用户重开/刷新插件面板即看到最新（无导入导出）。
+chrome.runtime.onMessageExternal.addListener((msg, sender, sendResponse) => {
+  if (!msg) return;
+  // 仅接受白名单来源（manifest.externally_connectable.matches 已限制 127.0.0.1 / localhost）
+  const url = (sender && sender.url) || "";
+  if (!/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(url)) {
+    sendResponse({ ok: false, error: "来源不在白名单：" + url });
+    return;
+  }
+  if (msg.type === "RFA_PING") { sendResponse({ ok: true, pong: true }); return; }
+  if (msg.type === "RFA_SYNC_ALL") {
+    (async () => {
+      try {
+        const incoming = Array.isArray(msg.versions) ? msg.versions : [];
+        if (!incoming.length) { sendResponse({ ok: true, note: "空版本列表，跳过" }); return; }
+        const cur = await getStorage(["profiles", "activeProfileId"]);
+        const incIds = new Set(incoming.map((v) => v.id));
+        // 以网页 versions 为准，全量重建 profiles（按 id 对齐：增 / 改 / 删）
+        const next = incoming.map(function (v) {
+          const d = v.data && typeof v.data === "object" ? v.data : {};
+          return { id: v.id, name: v.name || "未命名", data: d };
+        });
+        let activeId = cur.activeProfileId;
+        if (!incIds.has(activeId)) activeId = next.length ? next[0].id : null;
+        await setStorage({ profiles: next, activeProfileId: activeId, rfa_synced_ts: Date.now() });
+        sendResponse({ ok: true, synced: next.length });
+      } catch (e) {
+        sendResponse({ ok: false, error: String((e && e.message) || e) });
+      }
+    })();
+    return true;
+  }
+  if (msg.type === "RFA_SYNC") {
+    (async () => {
+      try {
+        const { profiles, activeId } = await ensureProfiles();
+        const p = profiles.find((x) => x.id === activeId) || profiles[0];
+        // 防写空：只有收到「有效且非空」档案才覆盖，避免网页侧发空对象把插件档案清空
+        const d = msg.data;
+        const valid = d && typeof d === "object" && !Array.isArray(d) && Object.keys(d).length > 0;
+        if (valid) {
+          // 文件字节单独存（不污染档案结构，避免 JSON 通道把 File/Blob 带进 profile.data）
+          let syncedFiles = 0;
+          if (d.__files && typeof d.__files === "object") {
+            await setStorage({ ["rfa_files_" + p.id]: d.__files });
+            for (const k in d.__files) { if (d.__files[k] && !d.__files[k].skip) syncedFiles++; }
+            delete d.__files;
+          }
+          p.data = d;
+          if (msg.versionName && typeof msg.versionName === "string") p.name = msg.versionName;
+          await setStorage({ profiles, activeProfileId: p.id });
+          sendResponse({ ok: true, profileId: p.id, synced: true, syncedFiles });
+        } else {
+          // 数据无效/为空：保留插件现有档案，不覆盖（同时把网页现有档案反向不产生影响）
+          sendResponse({ ok: true, profileId: p.id, synced: false, note: "收到空数据，已保留插件现有档案" });
+        }
+      } catch (e) {
+        sendResponse({ ok: false, error: String((e && e.message) || e) });
+      }
+    })();
+    return true; // 保持 sendResponse 异步可用
+  }
 });

@@ -1,5 +1,24 @@
 // content.js — 注入到招聘网页，负责识别板块、扫描字段、自动填充并高亮。
 
+// 自动把本扩展 ID 广播给网页（Get Offer 产品页可自填插件ID，免去手动粘贴）
+// 通道说明：CustomEvent 跨隔离世界不一定送达页面，最可靠的是「共享 DOM 属性」
+// （document 在隔离世界与页面世界是同一个对象，设置的 attribute 双方都可见）。
+(function(){
+  try{
+    function rfaBroadcastId(){
+      try{ document.dispatchEvent(new CustomEvent('rfa-extid', { detail: chrome.runtime.id })); }catch(e){}
+      try{ document.documentElement.setAttribute('data-rfa-extid', chrome.runtime.id); }catch(e){}
+    }
+    rfaBroadcastId();
+    document.addEventListener('DOMContentLoaded', rfaBroadcastId);
+    document.addEventListener('readystatechange', function(){ if(document.readyState!=='loading') rfaBroadcastId(); });
+    // 持续补发，确保页面脚本较晚注册监听/轮询时仍能拿到
+    setTimeout(rfaBroadcastId, 400);
+    setTimeout(rfaBroadcastId, 1200);
+    setTimeout(rfaBroadcastId, 2500);
+  }catch(e){}
+})();
+
 const ATTR = "data-rfa-idx";
 
 // 板块关键词映射
@@ -273,6 +292,27 @@ function isSingleOptionRequired(field) {
   const req = field.required || /[*＊]/.test(String(field.rawLabel || field.label || ""));
   const n = typeof field.optionCount === "number" ? field.optionCount : -1;
   return !!req && n === 1;
+}
+
+// v0.8.13：用户在面板设置的手机区号（chrome.storage.local.rfa_phone_cc，如 "86"/"852"）。
+// 填充启动（onMessage autofill）时预读进此全局变量；区号下拉在「档案手机号无国家码」时按此选择——
+// 用户明确选择 = 有数据，不违反「无数据不选」铁律；未设置时维持铁律（留空提示用户手动确认）。
+let RFA_USER_PHONE_CC = "";
+
+// v0.8.13：从档案手机号提取国家码（"86"/"852"…）。
+// 只认「+ 开头」的号码（无 + 视为无国家码，铁律：不猜）；
+// 按已知国家码列表最长优先匹配，且要求后面至少 5 位本地号码——
+// 修历史 bug：原 /^\+(\d{1,4})/ 贪婪匹配会把手机号开头吞掉
+//（"+86 17396253243" 被误取成 "8617"、"+852 61234567" 被误取成 "8526"）。
+const KNOWN_CC = ["886", "852", "853", "86", "65", "81", "82", "44", "61", "33", "49", "91", "7", "1"];
+function extractCcFromPhone(phone) {
+  const s = String(phone || "").replace(/[\s\-()]/g, "");
+  if (!/^\+/.test(s)) return "";
+  const d = s.slice(1);
+  for (const cc of KNOWN_CC) {
+    if (d.startsWith(cc) && /^\d{5,}$/.test(d.slice(cc.length))) return cc;
+  }
+  return "";
 }
 
 // v0.6.58：招聘站的手机号框旁边基本都有独立的「+86」区号选择器，
@@ -1822,7 +1862,10 @@ async function fillCombobox(el, rawValue, field) {
     // openCombobox 点在 1px 的输入框上，弹层时开时不开（百度学校/专业时好时坏的根因之一）。
     box = el.closest(".ud__select__selector") || el.closest(".ud__select") || el.closest(".ant-select") || el.closest(".brick-select") || el;
   } else if (el.className && /ud__select/.test(el.className)) {
-    box = el.querySelector(".ud__select__selector") || el;
+    // v0.8.13（字节修复）：期望工作地点等**可搜索多选下拉**扫进来的是内部搜索 input
+    //（class 含 ud__select__selector__search__input，非 readonly），这里必须向上取 .ud__select__selector 容器，
+    // 否则 box=input 本身，openCombobox 点的是 1px 搜索框、multiple/tags 上下文全丢。
+    box = el.closest && el.closest(".ud__select__selector") ? el.closest(".ud__select__selector") : (el.querySelector(".ud__select__selector") || el);
   }
   const boxCls = (box.className || "").toString();
   const isBrick = /\bbrick-select\b/.test(boxCls);
@@ -1847,7 +1890,9 @@ async function fillCombobox(el, rawValue, field) {
     !!(box.getAttribute && box.getAttribute("multiple") !== null) ||
     !!(box.querySelector && box.querySelector("input[multiple]"));
   // 兜底：标签明确「至多三个 / 多选」的必为多选（Element UI 2.x 未选中时 .el-select__tags 可能尚未渲染）
-  if (!multiple && /（至多三个）|至多三个|可多选|多选|多个|开发语言|编程语言|technical\s*skills?|tech\s*stack|期望工作城市|掌握.*语言/i.test(label)) multiple = true;
+  // v0.8.13（字节修复）：补上飞书/字节系叫法「期望工作地点 / 意向工作地点」——之前只有「期望工作城市」，
+  //   字节社招「期望工作地点」被当单选 → "北京、上海" 整个串打进搜索框 → 匹配不上任何城市（真机 input 值=「北京、上海」、无选中项铁证）。
+  if (!multiple && /（至多三个）|至多三个|可多选|多选|多个|开发语言|编程语言|technical\s*skills?|tech\s*stack|期望工作城市|期望.{0,4}工作地点|意向.{0,4}工作地点|掌握.*语言/i.test(label)) multiple = true;
   // v0.7.1（#185）：el-select 无论 filterable 与否，选项都靠「点选项」选中，强制走只读（按文本点选）分支；
   // 否则会误把只读 input 当可输入过滤框去 setNativeValue，非 filterable 的下拉根本不吃文本过滤。
   const readonly = isElSel
@@ -3183,7 +3228,12 @@ async function fillFieldAsync(el, value, field) {
       // el-select 多选，必须交给 fillCombobox 走「点选项」逻辑。
       // 之前没排除 → 走进 fillAddressTree → 直接抛 ReferenceError，两个必填城市字段全空。
       const isElComp = !!(el.closest && el.closest(".el-select, .el-cascader"));
-      if (!isElComp && /所在|现居|居住|城市|地点|location|家乡|籍贯|户籍|出生地/i.test(label)) {
+      // v0.8.13（字节修复）：「期望工作地点/期望工作城市/意向工作地点」是**城市多选下拉**，不是地址级联树！
+      // 之前 label 命中 /城市|地点/ 被误送进 fillAddressTree（省市区级联专用）→ 城市多选永远填不上
+      // （真机铁证：字节「期望工作地点」input 残留整串"北京、上海"、无任何选中项、fillCombobox 从未执行）。
+      // 排除后落到 fillCombobox：multiple 兜底（期望.{0,4}工作地点）→ 顿号拆分逐个搜索选择。
+      const isCityMultiPick = /期望.{0,4}(工作城市|工作地点)|意向.{0,4}(工作地点|工作城市)|期望城市|目标城市/.test(label);
+      if (!isElComp && !isCityMultiPick && /所在|现居|居住|城市|地点|location|家乡|籍贯|户籍|出生地/i.test(label)) {
         return await fillAddressTree(el, String(value), field);
       }
       const _cb = await fillCombobox(el, String(value), field);
@@ -3387,17 +3437,22 @@ function findSelectOption(opts, valStr, label) {
       /^\+\d{1,4}$/.test(v) ||
       looksAreaCode
     ) {
-      // 区号下拉一律以档案手机号自带国家码为准，默认中国大陆 86。
+      // 区号下拉一律以档案手机号自带国家码为准；⚠️ 无国家码一律不选（铁律，用户 2026-08-20）。
       // 注意：此处不能用传进来的 valStr（字节把身份证号/姓名等值也可能传进来），
       // 只在 valStr 确实是纯区号时才采信它。
       const vIsCc = /^[+＋]?\d{1,4}$/.test(String(valStr).trim());
       const rawPhone = String(
         ((CURRENT_PROFILE && CURRENT_PROFILE.basic && CURRENT_PROFILE.basic.phone) || "")
       ).replace(/[\s\-()]/g, "");
-      const phoneCc = (rawPhone.match(/^[+＋](\d{1,4})/) || [])[1];
+      // v0.8.13：用安全提取函数（v0.8.20 的 /^\+(\d{1,4})/ 贪婪会把手机号开头吞进国家码）
+      const phoneCc = extractCcFromPhone(rawPhone);
+      // ⚠️ 铁律：档案手机号没有国家码（非 + 开头）→ 不选区号下拉，返回 null 留空标黄让用户手动确认，
+      //    绝不默认「+86」、绝不猜（避免 +1340 类错选）。
+      // v0.8.13：用户在面板明确设置了区号（RFA_USER_PHONE_CC，如 "86"）→ 按用户设置选（用户明确选择=有数据）。
+      if (!vIsCc && !phoneCc && !RFA_USER_PHONE_CC) return null;
       const cc = vIsCc
         ? (String(valStr).match(/\d{1,4}/) || ["86"])[0]
-        : phoneCc || "86";
+        : (phoneCc || RFA_USER_PHONE_CC);
       const ccRe = new RegExp("(^|[^\\d])\\+?" + cc + "(?![\\d])");
       const cands = opts.filter((o) => ccRe.test((o.text || "").trim()));
       if (cands.length) {
@@ -5212,10 +5267,14 @@ function matchFieldCore(field, profile, indices) {
     // v0.7.0 曾以「留空即等于 +86」为由显式返回 null，但实测腾讯把它标成必填且默认空值，
     // 且按产品铁律：通用、非隐私、非站点专属的下拉一律由插件 100% 自动选完，不留给用户点。
     // 因此改为主动给值：默认「中国 +86」；若档案手机号自带别国国家码（+852/+1…）则跟随它。
-    if (field.type === "div" && /(如您是中国大陆籍|86.*手机|手机.*86|手机号.*区号|国家.*区号|区号)/.test(label)) {
-      const raw = String(basics.phone || "").replace(/[\s\-()]/g, "");
-      const m = raw.match(/^\+(\d{1,4})/);
-      const cc = m && m[1] !== "86" ? m[1] : "86";
+    // v0.8.13（字节修复）：字节/飞书社招的区号下拉 label 就是「手机号码」（无「区号/86」字样），
+    //   且是 div 下拉形态——旧判定命中不了，matchValue 会落入下方 /手机|电话/ 规则把「手机号本身」
+    //   （如 13800001234）当值返回 → 输入框型下拉用它搜索 → 过滤出含「1340」的邻近选项 → 错选 +1340（真机铁证）。
+    //   故放宽：div 下拉形态 + label 含 手机/电话/区号/86 → 一律按区号下拉处理，返回「+档案区号」。
+    if (field.type === "div" && /(如您是中国大陆籍|区号|86.*手机|手机.*86|手机号.*区号|国家.*区号|区号|手机号码|手机号|手机|电话)/.test(label)) {
+      // v0.8.13：优先级 = 用户面板设置（档案 basic.phoneCc，如 "86"）> 档案自带国家码（+852/+86 等，安全提取）> 无则 null（铁律：不默认 +86）。
+      const cc = RFA_USER_PHONE_CC || extractCcFromPhone(String(basics.phone || "")) || "";
+      if (!cc) return null;
       return "+" + cc;
     }
 
@@ -5686,7 +5745,16 @@ function matchFieldCore(field, profile, indices) {
   // 证书（美团只有「证书名称」一个字段，其它站可能还有时间/编号）
   if (section === "certificates") {
     const item = (profile.certificates || [])[indices.certificates] || {};
-    if (/描述|简介|说明|内容|description/.test(label)) return item.description || null;
+    if (/描述|简介|说明|内容|description/.test(label)) {
+      // v0.8.x（#378 后续）：字节等站的「证书名称」是受限下拉，我们的证书名不在选项内，
+      // 只能落为「其他」，真实证书名无法进入名称框。故描述框兜底补上证书名称，
+      // 确保证书信息不丢失；若描述已含证书名则不重复追加。
+      const nm = item.name || "";
+      const desc = item.description || "";
+      if (nm && desc && !desc.includes(nm)) return nm + "。" + desc;
+      if (!desc) return nm || null;
+      return desc;
+    }
     if (/时间|日期|年份|获得|颁发|date/.test(label)) return item.date || null;
     if (/编号|证书号|no\.?|number/.test(label)) return item.no || null;
     if (/名称|证书|资格|name/.test(label)) return item.name;
@@ -6914,68 +6982,103 @@ function toggleNoExperienceCheckbox(sectionName, shouldFill) {
 // 这里直接按标题文字定位空板块，点其内部的「添加」按钮（class 含 apply-form-array-card-add-float-right）。
 async function expandWrapperArraySection(titleText, needed) {
   if (!needed || needed <= 0) return;
+  // v0.8.13（字节修复）：wrapper class 是 CSS Modules 哈希（applyFormModuleWrapper__2JZaE）
+  // 或空态（applyFormModuleWrapper-empty），旧精确选择器 `div.applyFormModuleWrapper` 匹配 0 个
+  // → 语言/社交卡永远建不出来（真机：语言 6 条只填 1 条、社交 8 条只填 1 条）。
+  // 改前缀匹配 [class*="applyFormModuleWrapper"]；前缀会命中 title/left/text 等子元素，
+  // 故优先选「含添加按钮」的容器（否则 addBtn 永远 null）。
   const wrappers = Array.from(
-    document.querySelectorAll("div.applyFormModuleWrapper-empty, div.applyFormModuleWrapper")
+    document.querySelectorAll("[class*='applyFormModuleWrapper']")
   ).filter((el) => {
     const t = getText(el);
     return t && t.includes(titleText);
   });
   if (!wrappers.length) return;
-  const wrapper = wrappers[0];
+  const hasAddBtn = (w) =>
+    w.querySelector(
+      "button.apply-form-array-card-add-float-right__1d6856, button.apply-form-array-card-add-float-right, [class*='apply-form-array-card-add']"
+    ) ||
+    Array.from(w.querySelectorAll("button, [role='button'], div, span, a")).some(
+      (b) => /^(\+\s*)?添加/.test(getText(b).trim()) && isRealAddButton(b)
+    );
+  // v0.8.13（字节社交最终修复）：空态 wrapper class 是「applyFormModuleWrapper-empty applyFormModuleWrapper__xx」（双 token），
+  // 点击「添加」后 React **替换整个 DOM 节点**（空态→非空态不同模板）→ 旧 wrapper 引用 detached → countCards 恒 0
+  // → waitRender 永远失败（真机铁证：社交 8 条只填 1 条，wrap-expand-stop at:0）。
+  // 修法：每次点击前**重新定位 wrapper / addBtn**（findWrapper 重查 DOM），countCards 也基于最新 wrapper。
+  const findWrapper = () => {
+    const ws = Array.from(
+      document.querySelectorAll("[class*='applyFormModuleWrapper']")
+    ).filter((el) => {
+      const t = getText(el);
+      return t && t.includes(titleText);
+    });
+    if (!ws.length) return null;
+    return ws.find(hasAddBtn) || ws[0];
+  };
+  let wrapper = findWrapper();
+  if (!wrapper) return;
   // 优先按 class 精确定位，兜底按文字含「添加」的元素。
   // v0.7.1 关键修复（#167 根因）：原来三级兜底全部限定 <button>，
   // 但字节的社交板块「添加」是个 DIV（class = apply-form-array-card-operate__xxxx），
   // 三个选择器全部落空 → if (!addBtn) return 直接退出 → 一张卡都没加出来。
   // 后果：档案 8 条社交只有默认那 1 张卡可写，8 条数据挤同一张卡互相覆盖
-  // （实测结果是平台停在「微信」、URL 却是最后一条的 github.com/linqingyue）。
-  const addBtn =
-    wrapper.querySelector("button.apply-form-array-card-add-float-right__1d6856") ||
-    wrapper.querySelector("button.apply-form-array-card-add-float-right") ||
-    wrapper.querySelector("[class*='apply-form-array-card-add']") ||
-    Array.from(
-      wrapper.querySelectorAll("button, [role='button'], div, span, a")
-    ).find((b) => /^(\+\s*)?添加/.test(getText(b).trim()) && isRealAddButton(b));
+  // （实测结果是平台停在「微信」、URL 却是最后一条的 github.com/example）。
+  // v0.8.13（字节社交修复）：真「添加」是 BUTTON.ud__button--text-primary（文本"添加"），
+  // 旧兜底 button+div+span+a 一把抓，先命中了无效的 DIV.apply-form-array-card-operate 包装层
+  //（点它不建卡）。必须 **button/[role=button] 优先**、div/span/a 兜底。
+  const findAddBtn = (w) =>
+    w.querySelector("button.apply-form-array-card-add-float-right__1d6856") ||
+    w.querySelector("button.apply-form-array-card-add-float-right") ||
+    w.querySelector("[class*='apply-form-array-card-add']") ||
+    Array.from(w.querySelectorAll("button, [role='button']")).find(
+      (b) => /^(\+\s*)?添加/.test(getText(b).trim()) && isRealAddButton(b)
+    ) ||
+    Array.from(w.querySelectorAll("div, span, a")).find(
+      (b) => /^(\+\s*)?添加/.test(getText(b).trim()) && isRealAddButton(b)
+    );
+  let addBtn = findAddBtn(wrapper);
   if (!addBtn) return;
 
   // v0.8.x（2026-08-14·字节语言卡修复）：旧 countCards 只数「含 input/textarea 的卡片」，
   // 但字节语言卡用 ud__select（自定义 div 下拉，卡内没有真正的 input），于是计数恒为 0 →
   // 误判「没有卡片」→ over-click 出一堆幽灵空卡；且字节新卡挂载要等数百毫秒~数秒，旧的 3s 渲染判定太短。
-  // 改为：卡片 = 含 input/textarea/ud__select 且不是「添加」按钮的 array-card 容器；
-  // 渲染判定看「卡片数是否增加」，每点一次最多等 8s；循环结束后再核账补点，确保达到 needed。
-  const countCards = () =>
-    Array.from(wrapper.querySelectorAll("[class*='array-card']")).filter(
-      (c) =>
-        !/add/i.test(c.className) &&
-        c.querySelector("input, textarea, [contenteditable='true'], [class*='ud__select']")
-    ).length;
+  // v0.8.13（字节社交最终修复）：`[class*='array-card']` 每张卡会命中 4 个嵌套节点
+  //（容器 apply-form-array-card__xx / -content- / -operate- / -add-），旧的「含控件」过滤仍重复计数 → waitRender 误判。
+  // 改为精确数「卡片容器」：class 以 apply-form-array-card__ 开头（content/operate/add 的 class 是 -content-/-operate-/-add-，
+  // 不含 __ 前缀，天然排除）。真机验证：2 张社交卡 → 此口径恰为 2。
+  const countCards = () => {
+    const w = findWrapper();
+    if (!w) return 0;
+    let n = 0;
+    w.querySelectorAll("[class*='array-card']").forEach((c) => {
+      const cn = (typeof c.className === "string" ? c.className : "").trim();
+      if (cn.indexOf("apply-form-array-card__") === 0) n++;
+    });
+    return n;
+  };
   const before = countCards();
   const clicks = Math.max(0, needed - Math.max(before, 0));
   rfaLog({ act: "wrap-expand", sec: titleText, needed: needed, have: before, click: clicks });
 
-  const waitRender = async () => {
-    const prev = countCards();
-    for (let t = 0; t < 16; t++) {
-      await sleep(500);
-      if (countCards() > prev) return true;
-    }
-    return false;
-  };
+  // v0.8.13（字节社交最终修复）：字节空态→非空态是**整棵 DOM 替换**，新卡延迟数百毫秒~数秒挂载，
+  // waitRender 按 countCards 判定实测不可靠（点击实际成功、计数却判定失败 → 提前 stop，社交 8 条只建 2 张）。
+  // 改为：clicks 次点击之间**固定等 2s**（不依赖计数），全部点完；reconcile 再用精确 countCards 核账补点。
   for (let i = 0; i < clicks; i++) {
+    // 每次点击前重新定位（空态→非空态 DOM 节点被 React 替换，旧引用已 detached）
+    wrapper = findWrapper() || wrapper;
+    addBtn = findAddBtn(wrapper) || addBtn;
     simulateClick(addBtn);
-    if (!(await waitRender())) {
-      rfaLog({ act: "wrap-expand-stop", sec: titleText, at: i });
-      break;
-    }
+    await sleep(2000);
   }
-  // v0.8.x：字节新卡常延迟挂载，上面的循环可能漏点。结束后再核账：没到 needed 就补点（同样带 8s 渲染判定），
+  // v0.8.x：字节新卡常延迟挂载，上面的循环可能漏点。结束后再核账：没到 needed 就补点（同样带 2s 等待），
   // 绝不盲目多点到溢出，也不因单次渲染慢就少卡。
   let guard = 0;
   while (countCards() < needed && guard < needed + 2) {
+    // v0.8.13：每次点击前重新定位（空态→非空态 DOM 节点被 React 替换）
+    wrapper = findWrapper() || wrapper;
+    addBtn = findAddBtn(wrapper) || addBtn;
     simulateClick(addBtn);
-    if (!(await waitRender())) {
-      rfaLog({ act: "wrap-expand-stop", sec: titleText, at: "reconcile" });
-      break;
-    }
+    await sleep(2000);
     guard++;
   }
 }
@@ -7434,7 +7537,7 @@ function findFileInputFor(cat, usedInputs, fileName, workIndex) {
   const isVideoFile = /^(mp4|mov|avi|mp3|wav|flac|m4v|mkv|webm|m4a|aac|ogg)$/.test(ext);
 
   // v0.7.6（#257）：**格式硬校验**。腾讯整页只有一个简历上传框（文案写明
-  // 「支持格式pdf/.doc/.docx/.jpg/.png」），插件却把作品集 portfolio_林清越.zip 往里塞，
+  // 「支持格式pdf/.doc/.docx/.jpg/.png」），插件却把作品集 测试作品集.zip 往里塞，
   // 页面每次都弹「不支持当前格式」红条——实测一轮刷了 60 多次，既拖慢填充又遮挡下方控件。
   // 现在：文件后缀与该框明确声明的格式清单冲突时直接判死（-1000），不再瞎传。
   const extConflict = (inp) => {
@@ -7799,12 +7902,12 @@ function filterMeituanUploads(items) {
 }
 
 // v0.6.80：判断同名附件是否已经挂在页面上。
-// 实测事故：冒烟测试传过一次 portfolio_林清越.pdf，完整填充又传一次，
+// 实测事故：冒烟测试传过一次 测试作品集.pdf，完整填充又传一次，
 // 美团作品集里并排躺着两个同名文件 —— 用户看到的就是「重复上传」。
 // v0.6.81：上一版这里照抄了 antd/mtd 组件库的通用类名（.mtd-upload-list-item ...），
 // 但美团简历页的附件列表**根本不是这个结构**。DOM 探针实测真实结构是：
 //   <div class="sample_list"><div class="model_list">
-//       <div class="name">portfolio_林清越.pdf</div><i class="mtdicon-delete-o"></i>
+//       <div class="name">测试作品集.pdf</div><i class="mtdicon-delete-o"></i>
 //   </div></div>
 // 选择器全部落空 → 去重形同虚设 → 冒烟测试传过的 pdf 在完整填充时又被传一次，
 // 页面上并排两个同名文件。这里改成「美团真实结构 + 通用结构」双保险。
@@ -7837,7 +7940,7 @@ function isAlreadyUploadedByClass(target) {
     if (t.length > 200) continue;
     if (t.indexOf(target) >= 0) {
       // v0.7.1（#166）：**上传失败的条目也会把文件名留在列表里**。
-      // 字节实测：9.4MB 的 resume_林清越.pdf 传失败后，列表里照样显示文件名，
+      // 字节实测：9.4MB 的 测试简历.pdf 传失败后，列表里照样显示文件名，
       // 旁边才是一行小字「上传失败，请重试」。只认名字的话，重跑插件会判定
       // 「已在页面上」直接跳过 —— 用户永远等不到这份简历被补传，而且看到的是
       // 绿色的「跳过重复上传」，比不提示还误导。带失败文案的条目一律不算已上传。
@@ -7852,13 +7955,13 @@ function isAlreadyUploadedByClass(target) {
 // 招聘站对附件大小/格式的限制经常【完全不写在页面上】——字节的简历附件区通篇找不到
 // 任何「不超过 N MB」的文案，只有传完才在文件名旁边冒出一行「上传失败，请重试」。
 // 旧逻辑只要 setFileInput 派发 change 成功就 showToast「已上传 xxx」并记 upload_ok，
-// 用户看到绿色提示以为稳了 —— 实测 9.4MB 的 resume_林清越.pdf 连传两次都失败，
+// 用户看到绿色提示以为稳了 —— 实测 9.4MB 的 测试简历.pdf 连传两次都失败，
 // 插件全程没有任何异常提示，简历栏实际是空的。这在投递场景是最致命的一类静默失败。
 // 这里在上传后回读页面，确认文件名旁边有没有失败态文案。
 // 失败文案的匹配必须「宁紧勿松」。
 // 第一版写得太贪心（重新上传|超过|过大|文件大小|不支持|格式(不|错)|error），
 // live 一跑就翻车：美团简历区正常长这样 ——
-//   「resume_林清越.pdf 预览｜删除｜重新上传  支持doc、docx、pdf格式（10M以下）」
+//   「测试简历.pdf 预览｜删除｜重新上传  支持doc、docx、pdf格式（10M以下）」
 // 「重新上传」是常驻操作按钮、「格式（10M以下）」是格式提示，结果一份**上传成功**的
 // 简历被判成失败 → 插件会对着成功的上传弹警告、还会因为去重失效再传一份同名文件。
 // 误报比漏报更伤：用户会开始不信任所有提示。所以这里只保留「明确在说失败」的说法。
@@ -7867,7 +7970,7 @@ const UPLOAD_FAIL_RE =
 
 const FILE_NAME_RE = /[^\s，,、|/\\]+\.(pdf|docx?|xlsx?|pptx?|jpe?g|png|gif|zip|rar|7z|mp4|mov|avi)\b/gi;
 
-// 插件自己吐的提示条里也带着文件名（「正在上传 resume_林清越.pdf…」），
+// 插件自己吐的提示条里也带着文件名（「正在上传 测试简历.pdf…」），
 // 扫页面找附件时必须把它排除掉，否则会拿自己的提示当成网站的上传结果 —— 那就成了
 // 「自己证明自己成功」，校验形同虚设。
 function isPluginOwnNode(n) {
@@ -7995,16 +8098,18 @@ async function verifyUploadResult(fileName, waitMs, opts) {
     };
   };
 
-  const first = await probe(Date.now() + (waitMs || 4000));
-  if (!first.ok || !opts.recheck) return first;
+  // v0.8.x（字节上传专项）：先判明确失败/成功，避免无条件死等拖慢整条填充。
+  const first = await probe(Date.now() + (waitMs && waitMs > 0 ? waitMs : 9000));
+  if (first.ok) return first; // 文件名已可见且无失败文案 → 立即成功返回（不再傻等）
+  // 明确失败文案（上传失败/过大/格式不支持…）→ 立即返回，省去无谓复查
+  if (first.reason && /失败|过大|不支持|错误|超出|拒绝|retry|failed|error/i.test(first.reason)) return first;
+  if (!opts.recheck) return first;
 
-  // v0.7.1（#185）：一次探测不够——大文件要走网络，前 4s 页面往往只是显示「上传中 xxx.pdf」，
-  // 文件名在、也没有失败文案，于是被判成功；等服务器真正拒收后文件名才消失。
-  // 结果就是最致命的那类静默失败：绿色「已上传」+ 空简历栏。
-  // 实测腾讯 7MB 简历（超其 6MB 明示上限）正是如此：upload_verified 报成功，
-  // 但 100s 后回看页面上根本没有该文件名。故对简历/超限文件成功后再延迟复核一次。
-  await sleep(opts.recheckMs || 12000);
-  const again = await probe(Date.now() + 15000);
+  // 仅当「文件名未出现/不可见」（可能还在传）才做一次轻量复查；
+  // 封顶 sleep≤6s + probe≤8s，彻底砍掉原先「4s+12s+15s≈31s」的死等（字节/大文件上传卡顿主因）。
+  // 若复查期间文件名出现且无失败，probe 内会立即成功返回，不会真等满 8s。
+  await sleep(Math.min(opts.recheckMs || 12000, 6000));
+  const again = await probe(Date.now() + Math.min((opts.recheckMs2 || 15000), 8000));
   if (!again.ok) {
     return {
       ok: false,
@@ -8158,7 +8263,7 @@ async function handleFileUploads(items) {
           rfaLog({ type: "upload_verified", cat: it.cat, name: v.name });
         } else {
           manualNeeded = true;
-          rfaLog({ type: "upload_verify_fail", cat: it.cat, name: v.name, size: v.size, reason: vr.reason, ctx: vr.ctx });
+          rfaLog({ type: "upload_verify_fail", cat: it.cat, name: v.name, size: v.size, reason: vr.reason, ctx: vr.ctx, inputCtx: (typeof buildFileContext === "function" && buildFileContext(input) ? buildFileContext(input).all : "").slice(0, 240) });
           if (_overLimit) {
             showToast(`⚠ ${v.name} 被网站拒绝（${(v.size / 1048576).toFixed(1)}MB，上限${_sl.label}），请压缩后手动上传`, "warn");
           } else {
@@ -8417,7 +8522,7 @@ const DLG_SAFE_TEXT_RE =
 // 这类是**流程闸门**，判据是文案在问"你是谁/什么状态/什么身份"。
 const DLG_ONBOARD_TEXT_RE =
   /求职状态|你的身份|您的身份|选择身份|当前身份|求职身份|应聘类型|你是(在校|应届)|投递类型|选择你的|选择您的/;
-// 命中闸门后要选的那一项（林清越 = 2026 校招应届在校生）。
+// 命中闸门后要选的那一项（测试人 = 2026 校招应届在校生）。
 const DLG_ONBOARD_PICK_RE = /^(在校(生|学生)?|学生|校园招聘|校招|应届(生|毕业生)?|全日制在校生)$/;
 
 // 未知弹窗兜底：只点这些「纯关闭」控件，绝不点任何有语义的文字按钮。
@@ -8887,9 +8992,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return;
   }
   if (msg.action === "autofill") {
-    runAutofill(msg.profile, msg.fileVault || {}, msg.options || {}, msg.works || [])
-      .then((res) => sendResponse(res))
-      .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    // v0.8.13：区号来源优先级 = 档案 basic.phoneCc（面板「手机号」拆格里选的，随简历版本走）
+    //                                 > 旧版全局 rfa_phone_cc（兼容历史设置）> 无（铁律：档案没有就不动站点区号下拉）。
+    // 先同步读出再开始填充——区号下拉逻辑需要同步读取（RFA_USER_PHONE_CC），不能边填边异步等 storage。
+    const fromProfile = (msg.profile && msg.profile.basic && msg.profile.basic.phoneCc) || "";
+    chrome.storage.local.get("rfa_phone_cc", (r) => {
+      RFA_USER_PHONE_CC = fromProfile || (r && r.rfa_phone_cc) || "";
+      runAutofill(msg.profile, msg.fileVault || {}, msg.options || {}, msg.works || [])
+        .then((res) => sendResponse(res))
+        .catch((e) => sendResponse({ ok: false, error: String(e) }));
+    });
     return true; // async
   }
   if (msg.action === "clearPage") {
@@ -9633,6 +9745,24 @@ async function runAutofill(profile, fileVault, options, works) {
     return { ok: false, error: "no profile" };
   }
 
+  // v0.8.13（08-21 用户反馈「填充卡死/下拉点不开」）：字节新增 AI 助手浮层
+  // （campus-ai-assistant__fab-popover「👋 Hi，有什么可以帮你？」）常驻页面右上，
+  // 挡住表单点击 —— 期望工作地点等下拉永远打不开 → fillCombobox 卡死 → 整个投递卡住。
+  // 用户只能手动关；这里在填充开始前注入 CSS 把整个 AI 助手组件隐藏（!important 盖住
+  // React 重渲染，任何站点状态都能自愈，不影响表单功能）。
+  try {
+    if (/jobs\.bytedance\.com/i.test(location.hostname)) {
+      let st = document.getElementById("rfa-hide-byte-ai");
+      if (!st) {
+        st = document.createElement("style");
+        st.id = "rfa-hide-byte-ai";
+        st.textContent = '[class*="campus-ai-assistant"]{display:none !important;visibility:hidden !important;pointer-events:none !important;}';
+        (document.head || document.documentElement).appendChild(st);
+      }
+      rfaLog({ act: "byte-ai-hidden" });
+    }
+  } catch (e) { try { rfaLog({ act: "byte-ai-hide-err", err: String(e) }); } catch (x) {} }
+
   // v0.7.5：整个填充流程全程挂 observer（三档分诊清场），任何时候冒出的弹窗都自动按掉。
   // ttl 拉到 10 分钟，覆盖「上传 + 展开 + 填充 + 复填」全生命周期。
   try { window.__RFA_DIALOGS = []; } catch (e) {}
@@ -9744,7 +9874,7 @@ async function runAutofill(profile, fileVault, options, works) {
     if (fileVault && fileVault.photo) uploadItems.push({ cat: "avatar", data: fileVault.photo });
     // 2026-08-14（用户决策）：作品集附件【只上传第一个】（默认传作品集里出现的第一个）。
     // ① 腾讯等站作品集是「多个文字卡片 + 单个共享上传槽」，旧逻辑把 works 全量灌进同一槽，
-    //   同一文件在上传列表被重复出现多次（实测 portfolio_林清越.pdf 出现 3 次），刷新/重跑后
+    //   同一文件在上传列表被重复出现多次（实测 测试作品集.pdf 出现 3 次），刷新/重跑后
     //   易整组丢失或错乱；② 用户明确只要第一个作品集附件；其它作品卡片的【文字字段】
     //   （名称/链接/描述/密码）仍照常填（不受此限制，数量铁律 作品集4 不变）。
     // ③ 同名附件去重，避免多个作品指向同一文件时被上传多次。
@@ -10099,6 +10229,11 @@ async function runAutofill(profile, fileVault, options, works) {
       await cleanupEmptyLanguageCards(profile);
       // v0.8.15（#287）：应届生无 work 数据时，删掉被误填出内容的「工作经历」卡
       await cleanupZeroNeedWorkCards(profile);
+      // v0.8.13（字节·用户铁律 2026-08-21）：语言/社交板块「主下拉为空」的卡片必删——
+      // 语言名/平台在页面下拉里没有对应选项（普通话/小红书/B站等 picked:null）时，
+      // 不留空白卡（用户明确：没有就不做、删掉）。cleanupEmptyLanguageCards 的 maxRemovable
+      // 上限（totalCards−langNeed）会禁止删这种卡，这里独立兜底，只对字节站生效。
+      await removeBlankMainSelectCardsByte();
 
       // v0.8.40（A2 加固）：清卡会让框架（React/Vue）重建剩余卡片的 DOM 节点，
       // inline style 上的黄框随节点一起消失；同时删卡后原本被遮住的空字段可能才露出来。
@@ -10143,12 +10278,330 @@ async function runAutofill(profile, fileVault, options, works) {
 
 /* ================= 页面内可拖动面板（整块插件界面注入页面，可随意拖动） ================= */
 let rfaPanelEl = null;
+let rfaBallEl = null;
+
+/* ================= 悬浮小球（FAB）+ 助手卡片 =================
+ * 设计定稿（浅紫柔光，只用产品紫 #9b7bff / #7c5cff / #f6f4ff）：
+ *  - 小球钉在助手卡片右上角，只左下1/4压住卡片、3/4露在外面；
+ *  - 浅紫柔光渐变 + 白色外环/浅紫光晕，与卡片紫色头分开；
+ *  - 自由定位（抓到哪停哪，无磁吸），位置存 localStorage fab_card_pos_v3；
+ *  - 拖动小球带动卡片；点击小球（无位移）切换卡片展开/收起；
+ *  - 卡片含：版本块（通用版/AI运营版/作品集版 单选）+ ⚡一键投递/🔍标黄查漏/🔄同步到插件/⤢放大面板。
+ */
+let rfaCardEl = null;       // 助手卡片
+let rfaCardOpen = false;    // 卡片默认收起（用户要求：刷新后只留球，不展开）
+const RFA_CARD_W = 280;     // 卡片宽
+let rfaCardX = 0, rfaCardY = 0; // 卡片主体坐标（视口）
+// 在我们的「网页版 / 开发者页面」上不注入悬浮小球与助手卡片（小球只留在招聘站等真实页面，避免与网页自身 UI 冲突）
+function RFA_onWebapp() {
+  try {
+    const h = location.hostname, p = location.port;
+    // 本地开发者页面（intel-server 后端：localhost:3000 / 127.0.0.1:3000）
+    if ((h === "localhost" || h === "127.0.0.1") && p === "3000") return true;
+    // 已部署的 Get Offer 网页版：页面含专属元素 #rfaJobImport（CSV 导入按钮，常态隐藏但必在 DOM）
+    if (document.getElementById("rfaJobImport")) return true;
+  } catch (e) {}
+  return false;
+}
+// —— 关闭 / 再打开 悬浮助手（用户要求：能"叉掉"） ——
+// 设计：× 只隐藏「当前页面」（内存态，不写任何持久存储）；刷新或切到别的页面后 content.js 会
+// 重新初始化，小球自动重新出现。扩展弹窗里的「显示/隐藏悬浮助手」通过消息通道切换同一内存态，
+// 因此不管用哪种方式重新出现，一律是「小球」形态（可拖动），不会直接弹出大版面。
+let rfaHidden = false; // 当前页是否隐藏（仅内存，刷新即复位）
+
+function rfaSetHidden(hidden) {
+  rfaHidden = !!hidden;
+  if (rfaHidden) { hideBall(); return; }
+  // 重新显示：一律回到球形态（不自动展开版面），球可拖动
+  rfaCardOpen = false;
+  const b = ensureBall();
+  if (b) b.style.display = "flex";
+  if (rfaCardEl) rfaCardEl.style.display = "none";
+}
+function rfaCloseFab() { rfaSetHidden(true); }    // × 临时关闭（刷新后自动出现）
+function rfaReopenFab() { rfaSetHidden(false); }   // 重新显示（球形态）
+
+function rfaSetupGlobalListeners() {
+  // 扩展弹窗「显示/隐藏悬浮助手」→ 通过消息通道切换到本页内存态
+  try {
+    chrome.runtime.onMessage.addListener(function (msg, sender, sendResponse) {
+      if (!msg || !msg.action) return;
+      if (msg.action === "rfa_toggle_fab") {
+        rfaSetHidden(!rfaHidden);
+        try { sendResponse({ hidden: rfaHidden }); } catch (e) {}
+        return true;
+      }
+      if (msg.action === "rfa_get_fab_state") {
+        try { sendResponse({ hidden: rfaHidden }); } catch (e) {}
+        return true;
+      }
+    });
+  } catch (e) {}
+  // 快捷键 Alt+Q 切换显隐（备用）
+  document.addEventListener("keydown", function (e) {
+    if (e.altKey && (e.key === "q" || e.key === "Q")) { rfaSetHidden(!rfaHidden); }
+  });
+}
+
+function ensureBall() {
+  if (RFA_onWebapp()) return null;
+  if (rfaBallEl && document.body && document.body.contains(rfaBallEl)) return rfaBallEl;
+
+  // —— 样式（一次性注入，浅紫柔光，只用产品紫） ——
+  const style = document.createElement("style");
+  style.textContent =
+    ".rfa-ball{position:fixed;width:56px;height:56px;border-radius:50%;display:flex;align-items:center;justify-content:center;" +
+    "background:linear-gradient(135deg,#9b7bff 0%,#7c5cff 100%);color:#fff;font-size:22px;cursor:grab;z-index:2147483647;" +
+    "user-select:none;transition:transform .18s ease;" +
+    "box-shadow:0 6px 18px rgba(124,92,255,.35),0 0 0 5px rgba(255,255,255,.85),0 0 22px rgba(255,255,255,.95),0 0 34px rgba(155,123,255,.35);}" +
+    ".rfa-ball:active{cursor:grabbing;transform:scale(.96);}" +
+    ".rfa-ball .rfa-ball-tip{position:absolute;top:-30px;left:50%;transform:translateX(-50%);background:#2c2c2c;color:#fff;" +
+    "font-size:11px;padding:4px 9px;border-radius:7px;white-space:nowrap;opacity:0;transition:.15s;pointer-events:none;}" +
+    ".rfa-ball:hover .rfa-ball-tip{opacity:1;}" +
+    ".rfa-card{position:fixed;width:280px;background:#fff;border-radius:16px;z-index:2147483645;overflow:hidden;" +
+    "box-shadow:0 14px 40px rgba(90,74,224,.18);" +
+    "font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;}" +
+    ".rfa-card .rfa-chead{background:linear-gradient(135deg,#9b7bff 0%,#7c5cff 100%);color:#fff;padding:14px 16px 24px;}" +
+    ".rfa-card .rfa-chead .t{font-size:15px;font-weight:700;}" +
+    ".rfa-card .rfa-chead .tip{font-size:11px;opacity:.85;margin-top:3px;}" +
+    ".rfa-card .rfa-cbody{padding:14px 16px 16px;}" +
+    ".rfa-card .rfa-vers-h{font-size:11px;font-weight:700;color:#5b6472;margin-bottom:7px;}" +
+    ".rfa-card .rfa-vers-sel{width:100%;font-size:13px;padding:9px 10px;margin-bottom:14px;border-radius:10px;border:1.5px solid #d8d2f5;background:#F9F8FF;color:#3d3556;font-weight:600;cursor:pointer;appearance:auto;}" +
+    ".rfa-card .rfa-acts{display:flex;flex-direction:column;gap:9px;}" +
+    ".rfa-card .rfa-act{display:flex;align-items:center;justify-content:center;gap:7px;font-size:13.5px;font-weight:600;color:#fff;" +
+    "border:none;padding:12px 14px;border-radius:11px;cursor:pointer;background:#9b7bff;transition:.15s;font-family:inherit;}" +
+    ".rfa-card .rfa-act:hover{filter:brightness(1.05);}" +
+    ".rfa-card .rfa-act.mag{background:#7c5cff;}" +
+    ".rfa-card .rfa-tip2{font-size:12px;color:#7c5cff;min-height:16px;margin-top:8px;text-align:center;opacity:.95;font-weight:600;}" +
+    ".rfa-close{position:absolute;top:-7px;right:-7px;width:18px;height:18px;border-radius:50%;background:#fff;color:#7c5cff;" +
+    "font-size:13px;line-height:16px;text-align:center;cursor:pointer;z-index:2147483647;box-shadow:0 2px 6px rgba(60,40,160,.35);" +
+    "border:none;font-weight:700;padding:0;}" +
+    ".rfa-close:hover{background:#7c5cff;color:#fff;}" +
+    ".rfa-chead{position:relative;}" +
+    ".rfa-chead .rfa-x{position:absolute;top:10px;right:12px;width:22px;height:22px;border-radius:50%;" +
+    "background:rgba(255,255,255,.28);color:#fff;border:none;font-size:15px;line-height:22px;cursor:pointer;}" +
+    ".rfa-chead .rfa-x:hover{background:rgba(255,255,255,.5);}" +
+    ".rfa-card .rfa-dismiss-tip{font-size:11px;color:#9aa0ad;margin-top:10px;text-align:center;}";
+  document.documentElement.appendChild(style);
+
+  // —— 助手卡片（主体） ——
+  const card = document.createElement("div");
+  card.className = "rfa-card";
+  card.id = "rfa-card";
+  card.innerHTML =
+    '<div class="rfa-chead"><div class="t">秋招网申助手</div><div class="tip">点小球展开 / 收起 · 拖动小球可移动 · 点 × 暂时关闭（刷新后自动出现）</div><button class="rfa-x" title="暂时关闭（刷新页面会自动出现）">×</button></div>' +
+    '<div class="rfa-cbody">' +
+      '<div class="rfa-vers-h">选择简历版本</div>' +
+      '<select class="rfa-vers-sel" id="rfa-quick-vers"></select>' +
+      '<div class="rfa-acts">' +
+        '<button class="rfa-act" id="rfa-bDeliver">⚡ 一键投递</button>' +
+        '<button class="rfa-act" id="rfa-bMark">🔍 标黄查漏</button>' +
+        '<button class="rfa-act" id="rfa-bSync">🔄 同步到插件</button>' +
+      '</div>' +
+      '<div class="rfa-tip2" id="rfa-tip2"></div>' +
+    '</div>';
+  document.body.appendChild(card);
+  rfaCardEl = card;
+  const tip2 = card.querySelector("#rfa-tip2");
+
+  // —— 小球（钉在卡片右上角） ——
+  const ball = document.createElement("div");
+  ball.className = "rfa-ball";
+  ball.id = "rfa-ball";
+  ball.setAttribute("role", "button");
+  ball.setAttribute("tabindex", "0");
+  ball.setAttribute("title", "秋招网申助手 · 点击展开 / 收起 · 拖动可移动");
+  ball.innerHTML = '✦<span class="rfa-ball-tip">秋招网申助手 · 拖动我</span><button class="rfa-close" title="暂时关闭（刷新页面会自动出现）">×</button>';
+  document.body.appendChild(ball);
+  rfaBallEl = ball;
+
+  // —— × 关闭按钮（小球角标 + 卡片头） ——
+  const closeBtn = ball.querySelector(".rfa-close");
+  if (closeBtn) {
+    closeBtn.addEventListener("mousedown", function (e) { e.stopPropagation(); e.preventDefault(); });
+    closeBtn.addEventListener("click", function (e) { e.stopPropagation(); e.preventDefault(); rfaCloseFab(); });
+  }
+  const headX = card.querySelector(".rfa-x");
+  if (headX) headX.addEventListener("click", function (e) { e.stopPropagation(); e.preventDefault(); rfaCloseFab(); });
+
+  // —— 定位：小球钉卡片右上角，左下 1/4 压住卡片 ——
+  function place() {
+    card.style.left = rfaCardX + "px";
+    card.style.top = rfaCardY + "px";
+    card.style.display = rfaCardOpen ? "block" : "none";
+    // 球钉卡片左上角（用户要求球在左边，故改到左侧）→ 球左 = 卡左 - 28；球顶 = 卡顶 - 28
+    ball.style.left = (rfaCardX - 28) + "px";
+    ball.style.top = (rfaCardY - 28) + "px";
+    // 大面板：钉在小球左下（小球右上角压大面板右上角），始终位于小球下方
+    if (rfaPanelEl && rfaPanelEl.style.display !== "none") {
+      const pw = rfaPanelEl.offsetWidth || 440;
+      rfaPanelEl.style.left = (rfaCardX + RFA_CARD_W - pw) + "px";
+      rfaPanelEl.style.top = rfaCardY + "px";
+      rfaPanelEl.style.right = "auto";
+    }
+  }
+  function clampPos() {
+    const maxX = window.innerWidth - RFA_CARD_W - 10;
+    const maxY = window.innerHeight - 150;
+    rfaCardX = Math.min(Math.max(rfaCardX, 10), Math.max(10, maxX));
+    rfaCardY = Math.min(Math.max(rfaCardY, 10), Math.max(10, maxY));
+  }
+  function initPos() {
+    // 用户要求：刷新后默认收成球、钉在「左边中间」，不恢复历史拖拽位置
+    rfaCardX = 40;
+    rfaCardY = Math.round(window.innerHeight / 2);
+    clampPos();
+    place();
+  }
+  initPos();
+  // 视口变化时重新夹紧，避免滚出屏幕
+  window.addEventListener("resize", function () { clampPos(); place(); });
+
+  // —— 拖动 + 点击切换 ——
+  // 位移超过阈值视为拖动（移动卡片 + 小球跟随 + 存位置），未超阈值视为点击（切换卡片展开/收起）。
+  let drag = false, moved = false, sx = 0, sy = 0, ox = 0, oy = 0;
+  ball.addEventListener("mousedown", function (e) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    drag = true; moved = false;
+    sx = e.clientX; sy = e.clientY; ox = rfaCardX; oy = rfaCardY;
+    ball.style.transition = "none";
+  });
+  document.addEventListener("mousemove", function (e) {
+    if (!drag) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (!moved && Math.hypot(dx, dy) > 4) moved = true;
+    if (!moved) return;
+    rfaCardX = ox + dx; rfaCardY = oy + dy;
+    clampPos(); place();
+  });
+  document.addEventListener("mouseup", function () {
+    if (!drag) return;
+    drag = false;
+    if (!moved) {
+      // 视作点击：切换卡片展开 / 收起
+      rfaCardOpen = !rfaCardOpen;
+      place();
+    } else {
+      // 拖动：保存位置（自由定位，无磁吸）
+      try { localStorage.setItem("fab_card_pos_v3", JSON.stringify({ x: rfaCardX, y: rfaCardY })); } catch (e) {}
+    }
+  });
+
+  // —— 版本下拉（动态读真实 profiles，切换 activeProfileId；下拉式可容纳任意数量版本） ——
+  async function renderVers() {
+    const box = card.querySelector("#rfa-quick-vers");
+    if (!box) return;
+    const store = await new Promise(function (r) { chrome.storage.local.get(["profiles", "activeProfileId"], r); });
+    const list = store.profiles || [];
+    const activeId = store.activeProfileId;
+    box.innerHTML = "";
+    list.forEach(function (p) {
+      const o = document.createElement("option");
+      o.value = p.id;
+      o.textContent = (p.name || "未命名") + (p.data ? "" : "（空）");
+      if (p.id === activeId) o.selected = true;
+      box.appendChild(o);
+    });
+    if (!list.length) {
+      const o = document.createElement("option");
+      o.value = "";
+      o.textContent = "暂无档案";
+      box.appendChild(o);
+    }
+  }
+  renderVers();
+  // 下拉选择切换版本：立即写 activeProfileId（填充时 __RFA.run 实时读它）
+  const versSel = card.querySelector("#rfa-quick-vers");
+  if (versSel) {
+    versSel.addEventListener("change", async function () {
+      const id = versSel.value;
+      if (!id) return;
+      await new Promise(function (r) { chrome.storage.local.set({ activeProfileId: id }, r); });
+      tip2.textContent = "已选版本：" + (versSel.selectedOptions[0] ? versSel.selectedOptions[0].textContent : "");
+    });
+  }
+  // 插件 profiles 被外部（网页同步）更新时，自动刷新版本面板
+  try {
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area === "local" && changes.profiles) { renderVers(); }
+    });
+  } catch (e) {}
+  function curVer() {
+    const s = card.querySelector("#rfa-quick-vers");
+    return (s && s.value) ? s.value : "";
+  }
+
+  // —— ⚡ 一键投递（真实填充当前页，复用 window.__RFA.run 全套逻辑，只填不提交） ——
+  card.querySelector("#rfa-bDeliver").addEventListener("click", function () {
+    const v = curVer();
+    tip2.textContent = "正在一键投递（" + v + "）哒哒哒哒…";
+    try {
+      const run = (window.__RFA && window.__RFA.run) ? window.__RFA.run : null;
+      if (!run) { tip2.textContent = "⚠️ 插件未就绪，请刷新页面后重试"; return; }
+      Promise.resolve(run()).then(function (r) {
+        tip2.textContent = (r && r.ok)
+          ? ("✅ 投递完成（" + v + "）")
+          : ("⚠️ 投递未完成：" + ((r && r.error) || "未知"));
+      }).catch(function (e) {
+        tip2.textContent = "⚠️ 投递出错：" + (e && e.message ? e.message : e);
+      });
+    } catch (e) {
+      tip2.textContent = "⚠️ 无法启动投递：" + (e && e.message ? e.message : e);
+    }
+  });
+  // —— 🔍 标黄查漏（调用真实全量重绘标黄） ——
+  card.querySelector("#rfa-bMark").addEventListener("click", function () {
+    try {
+      const r = repaintWarnByRealState("card-mark");
+      tip2.textContent = "🔍 已标黄查漏：剩 " + (r && r.warn != null ? r.warn : 0) + " 个未填字段";
+    } catch (e) { tip2.textContent = "🔍 已触发标黄查漏"; }
+  });
+  // —— 🔄 同步到插件 ——
+  card.querySelector("#rfa-bSync").addEventListener("click", function () {
+    const v = curVer();
+    try {
+      if (chrome && chrome.runtime && chrome.runtime.sendMessage) {
+        try { chrome.runtime.sendMessage({ action: "syncToPlugin", version: v }); } catch (e) {}
+      }
+    } catch (e) {}
+    tip2.textContent = "🔄 已同步到插件（" + v + "）";
+  });
+
+  return ball;
+}
+function restoreBallPos() {
+  // 卡片/小球位置现由 ensureBall() 内的 fab_card_pos_v3 统一管理，
+  // 旧的 rfa_ball_pos（磁吸时代）不再使用，避免覆盖新定位。
+  return;
+}
+function showBall() { if (RFA_onWebapp()) return; const b = ensureBall(); if (!b) return; restoreBallPos(); b.style.display = "flex"; }
+function hideBall() { if (rfaBallEl) rfaBallEl.style.display = "none"; if (rfaCardEl) rfaCardEl.style.display = "none"; }
+function collapseToBall() {
+  if (RFA_onWebapp()) return;
+  if (rfaPanelEl) rfaPanelEl.style.display = "none";
+  showBall();
+}
+function rfaInitLauncher() {
+  let _listenersReady = false;
+  function go() {
+    if (!_listenersReady) { rfaSetupGlobalListeners(); _listenersReady = true; }
+    rfaSetHidden(false); // 每次页面加载都显示小球；× 仅是当前页临时隐藏
+  }
+  if (document.body) go();
+  else document.addEventListener("DOMContentLoaded", go, { once: true });
+}
 
 function openFloatPanel() {
   // 已存在则重新显示并置顶
   if (rfaPanelEl && document.body.contains(rfaPanelEl)) {
     rfaPanelEl.style.display = "flex";
-    rfaPanelEl.style.zIndex = "2147483647";
+    rfaPanelEl.style.zIndex = "2147483646";
+    // 重新钉到小球左下（小球位置可能已变化）
+    const pw = rfaPanelEl.offsetWidth || 440;
+    rfaPanelEl.style.left = (rfaCardX + RFA_CARD_W - pw) + "px";
+    rfaPanelEl.style.top = rfaCardY + "px";
+    rfaPanelEl.style.right = "auto";
     // 若被收起了，重新加载 iframe 保证数据最新
     const f = rfaPanelEl.querySelector("iframe");
     if (f && !f.src) f.src = chrome.runtime.getURL("popup.html") + "?mode=float&t=" + Date.now();
@@ -10160,8 +10613,7 @@ function openFloatPanel() {
   panel.innerHTML = `
     <div class="rfa-panel-head">
       <span class="rfa-panel-title">秋招网申助手</span>
-      <span class="rfa-panel-tip">按住此条可拖动到任意位置 · 关闭后可重新打开</span>
-      <button class="rfa-panel-close" title="关闭面板">×</button>
+      <button class="rfa-panel-close" title="收起，回到小卡片">收起 ✕</button>
     </div>
     <div class="rfa-panel-body"></div>
   `;
@@ -10172,93 +10624,50 @@ function openFloatPanel() {
   frame.setAttribute("allow", "clipboard-read; clipboard-write");
   frame.setAttribute("allowtransparency", "true");
   body.appendChild(frame);
+  // 隐藏 popup.html 自带的 #closePopup：iframe 内 window.close 对我们面板无效，
+  // 保留它会和面板拖动手柄并存两个 ×，体验割裂。注入样式直接藏掉原生关闭键。
+  frame.addEventListener("load", function () {
+    try {
+      const doc = frame.contentDocument;
+      if (doc && doc.head) {
+        const s = doc.createElement("style");
+        s.textContent = "#closePopup{display:none!important}";
+        doc.head.appendChild(s);
+      }
+    } catch (e) {}
+  });
 
   const style = document.createElement("style");
   style.textContent = `
-    .rfa-panel{position:fixed;left:55%;top:8%;width:440px;height:660px;max-width:96vw;max-height:94vh;
-      background:#fff;border-radius:12px;box-shadow:0 12px 44px rgba(0,0,0,.28);z-index:2147483647;
+    .rfa-panel{position:fixed;left:0;top:0;width:440px;height:660px;max-width:96vw;max-height:94vh;
+      background:#fff;border-radius:12px;box-shadow:0 12px 44px rgba(0,0,0,.28);z-index:2147483646;
       display:flex;flex-direction:column;overflow:hidden;
       font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
       min-width:320px;min-height:420px;resize:both;}
-    .rfa-panel-head{height:36px;flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 12px;
-      background:#5b3fd6;color:#fff;cursor:move;user-select:none;font-size:13px;border-radius:12px 12px 0 0;}
-    .rfa-panel-title{font-weight:600;white-space:nowrap;}
-    .rfa-panel-tip{flex:1;min-width:0;font-size:10.5px;opacity:.8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
-    .rfa-panel-close{flex:0 0 auto;border:none;background:rgba(255,255,255,.18);color:#fff;width:22px;height:22px;
-      border-radius:50%;cursor:pointer;font-size:14px;line-height:1;padding:0;}
-    .rfa-panel-close:hover{background:rgba(255,255,255,.38);}
+    .rfa-panel-head{height:40px;flex:0 0 auto;display:flex;align-items:center;gap:8px;padding:0 12px;
+      background:#7c5cff;color:#fff;user-select:none;font-size:13px;border-radius:12px 12px 0 0;}
+    .rfa-panel-title{font-weight:600;white-space:nowrap;flex:1;}
+    .rfa-panel-close{border:none;background:rgba(255,255,255,.18);color:#fff;font-size:12px;
+      padding:5px 10px;border-radius:8px;cursor:pointer;font-family:inherit;}
+    .rfa-panel-close:hover{background:rgba(255,255,255,.32);}
     .rfa-panel-body{flex:1;min-height:0;position:relative;}
     .rfa-panel-body iframe{position:absolute;inset:0;width:100%;height:100%;border:none;background:#fff;}
   `;
   document.documentElement.appendChild(style);
 
-  // —— 拖动逻辑 ——
-  // 方案：按下标题条时，立刻在面板上方盖一层「全屏透明遮罩」（属于外层页面）。
-  // 鼠标事件全部落在遮罩上（外层页面元素，事件能正常收到），彻底绕开 iframe
-  // 「鼠标进入内嵌网页后事件传不回来」的浏览器机制。松开后遮罩自动移除。
-  const head = panel.querySelector(".rfa-panel-head");
-  let dragging = false, sx = 0, sy = 0, ox = 0, oy = 0, overlay = null;
-
-  function createDragOverlay() {
-    const ov = document.createElement("div");
-    ov.className = "rfa-drag-overlay";
-    ov.style.cssText =
-      "position:fixed;inset:0;z-index:2147483647;cursor:move;" +
-      "background:rgba(255,255,255,0);";
-    document.body.appendChild(ov);
-    return ov;
-  }
-  function endDrag() {
-    if (!dragging) return;
-    dragging = false;
-    if (overlay) { overlay.remove(); overlay = null; }
-    try {
-      localStorage.setItem("rfa_panel_pos", JSON.stringify({ x: panel.style.left, y: panel.style.top }));
-    } catch (e) {}
-  }
-
-  head.addEventListener("mousedown", (e) => {
-    if (e.target.closest(".rfa-panel-close")) return;
-    e.preventDefault();
-    dragging = true;
-    const rect = panel.getBoundingClientRect();
-    sx = e.clientX; sy = e.clientY; ox = rect.left; oy = rect.top;
-    panel.style.left = rect.left + "px";
-    panel.style.top = rect.top + "px";
-    panel.style.right = "auto";
-    overlay = createDragOverlay();
-  }, true);
-
-  // 遮罩是外层页面元素，普通冒泡监听即可收到；不放 capture 是为了不干扰页面其他逻辑
-  document.addEventListener("mousemove", (e) => {
-    if (!dragging) return;
-    let nx = ox + (e.clientX - sx);
-    let ny = oy + (e.clientY - sy);
-    nx = Math.max(-panel.offsetWidth + 80, Math.min(nx, window.innerWidth - 80));
-    ny = Math.max(0, Math.min(ny, window.innerHeight - 44));
-    panel.style.left = nx + "px";
-    panel.style.top = ny + "px";
-  });
-  document.addEventListener("mouseup", endDrag);
-  // 鼠标拖出浏览器窗口再松开时补一个兜底，避免遮罩残留
-  window.addEventListener("blur", endDrag);
-
-  // 恢复上次位置
-  try {
-    const pos = JSON.parse(localStorage.getItem("rfa_panel_pos") || "null");
-    if (pos && pos.x) {
-      panel.style.left = pos.x;
-      panel.style.top = pos.y;
-      panel.style.right = "auto";
-    }
-  } catch (e) {}
-
-  panel.querySelector(".rfa-panel-close").addEventListener("click", () => {
+  // 统一由「小球」(把手)拖动带动本面板，面板自身不再独立拖动。
+  // 收起按钮：隐藏大面板，回到小卡片（小球仍最上层、可继续拖动）。
+  panel.querySelector(".rfa-panel-close").addEventListener("click", function () {
     panel.style.display = "none";
   });
 
   document.body.appendChild(panel);
   rfaPanelEl = panel;
+  // 钉在小球左下（小球永远在最上层，大面板位于其下方）
+  const pw = panel.offsetWidth || 440;
+  panel.style.left = (rfaCardX + RFA_CARD_W - pw) + "px";
+  panel.style.top = rfaCardY + "px";
+  panel.style.right = "auto";
 }
 
 /* ================= 清理教育板块多余的空白卡片 ================= */
@@ -10471,6 +10880,46 @@ function langNameSelectEmpty(c) {
     return false;
   }
 }
+// v0.8.13（字节·用户铁律 2026-08-21）：语言/社交板块「主下拉（语言名/平台）为空」的卡片必删。
+// 页面下拉没有该选项（普通话/小红书/B站等 picked:null）→ 不留空白卡。只对字节站生效，零影响其他站点。
+async function removeBlankMainSelectCardsByte() {
+  if (!/jobs\.bytedance\.com/i.test(location.hostname)) return;
+  for (const title of ["语言能力", "社交账号"]) {
+    for (let pass = 0; pass < 12; pass++) {
+      const ws = Array.from(
+        document.querySelectorAll("[class*='applyFormModuleWrapper']")
+      ).filter((el) => getText(el).includes(title));
+      const w = ws.filter((x) => /添加/.test(getText(x))).sort((a, b) => getText(a).length - getText(b).length)[0] || ws[0];
+      if (!w) break;
+      const cards = Array.from(w.querySelectorAll("[class*='apply-form-array-card__']"));
+      let removed = false;
+      for (const c of cards) {
+        // 主下拉 = 卡内第一个可见 select（语言名 / 社交平台）
+        const sels = Array.from(c.querySelectorAll(".ud__select, [class*='select']")).filter((s) =>
+          isVisible(s)
+        );
+        if (!sels.length) continue;
+        const mainTxt = getText(sels[0]).trim();
+        if (mainTxt) continue; // 主下拉有值 → 保留
+        // 主下拉为空 → 必删（页面无此选项），点删除按钮
+        const del =
+          c.querySelector("[class*='operate'] .ud__button--icon, [class*='operate'] button") ||
+          c.querySelector("button.ud__button--icon") ||
+          Array.from(c.querySelectorAll("button, [role='button']")).find((b) =>
+            /删除|移除|remove|delete/i.test(getText(b).trim())
+          );
+        if (del) {
+          try { simulateClick(del); removed = true; } catch (e) {}
+          break; // 删一张后等 DOM 重建，下一轮再处理
+        }
+      }
+      if (!removed) break;
+      await sleep(1200);
+    }
+  }
+  rfaLog({ act: "byte-blank-card-cleanup", done: true });
+}
+
 async function cleanupEmptyLanguageCards(profile) {
   // v0.7.3（#198）：字节/蔚来等「语言类型」是固定下拉选项。
   // 若档案里某语种（如普通话）页面下拉根本没有这个选项，matchField 填不进去会留一张空卡。
@@ -11135,6 +11584,133 @@ document.addEventListener("__RFA_RELOAD__", function () {
 document.addEventListener("__RFA_SETSTORAGE__", function (e) {
   const payload = (e && e.detail) || {};
   try {
+    // 单版本合并：网页「立即同步到插件」推当前版本 → 合并进 profiles（不丢其他版本）
+    if (payload.__rfa_sync_one) {
+      const one = payload.__rfa_sync_one;
+      chrome.storage.local.get(["profiles", "activeProfileId"], function (cur) {
+        let profiles = Array.isArray(cur.profiles) ? cur.profiles : [];
+        let found = false;
+        profiles = profiles.map(function (p) {
+          if (p.id === one.id) { found = true; return { id: p.id, name: one.name || p.name, data: one.data || p.data }; }
+          return p;
+        });
+        if (!found) profiles.push({ id: one.id, name: one.name || "未命名", data: one.data || {} });
+        // 文件字节单独存
+        if (one.__files && typeof one.__files === "object") {
+          chrome.storage.local.set({ ["rfa_files_" + one.id]: one.__files }, function () {
+            // v0.8.13（08-21 用户反馈「简历 PDF 没上传到招聘官网」）：网页同步的文件之前只存
+            // rfa_files_<id>，而 popup 一键投递读的是 fileVault —— 两者无桥，导致
+            // fileVault.resume/photo 恒空，简历/证件照附件永远传不上招聘官网。
+            // 这里把 __files 里的 resume/photo 按插件分片存储约定写入 fileVault。
+            // ⚠️ v0.8.13b（08-21 用户实测「PDF 传不上官网」最终根因）：网页版 gatherSyncFiles
+            //   的 rfaBlobToB64 输出的是【纯 base64（无 data: 前缀）】，而 setFileInput 解析
+            //   用 `dataUrl.split(",")` 取 MIME —— 纯 base64 无逗号 → b64=undefined → 注入
+            //   永远失败。popup 自己上传的文件（readAsDataURL）带前缀所以没事。
+            //   此处写入分片前必须补成 data URL（对齐 popup 格式），否则简历/证件照静默传不上去。
+            try {
+              const files = one.__files || {};
+              chrome.storage.local.get(["fileVault"], function (cur) {
+                const vault = cur.fileVault || {};
+                let changed = false;
+                ["resume", "photo"].forEach(function (cat) {
+                  const f = files[cat];
+                  const storageKey = "rfa_file_" + cat;
+                  if (f && f.base64 && !f.skip) {
+                    // 网页版有该文件 → 写入分片 + fileVault（带 data: 前缀，见上注释）
+                    const mime = f.type || (cat === "resume" ? "application/pdf" : "application/octet-stream");
+                    const dataUrl = "data:" + mime + ";base64," + f.base64;
+                    const FRAG = 1024 * 1024;
+                    const frags = [];
+                    for (let i = 0; i < dataUrl.length; i += FRAG) frags.push(dataUrl.slice(i, i + FRAG));
+                    const batch = {};
+                    batch[storageKey] = { name: f.name, size: f.size || 0, manual: false, fragments: frags.length };
+                    frags.forEach(function (p, idx) { batch[storageKey + "_part" + idx] = p; });
+                    chrome.storage.local.set(batch);
+                    vault[cat] = { name: f.name, size: f.size || 0, manual: false, storageKey: storageKey };
+                    changed = true;
+                  } else if (!f) {
+                    // v0.8.13c（08-21 用户追问「网页和插件不是同步的吗」）：网页版【没有】该文件类别
+                    // （上传区显示未选择）→ 同步时清掉插件里对应的旧文件 + 分片，
+                    // 让插件与网页版真正一致，避免「我没传却自动带上旧附件」。
+                    // ⚠️ 回调是异步的，必须【在回调里】写回 fileVault（不能靠 forEach 后的统一 set，
+                    //    否则 changed 还没置位 set 已执行 → fileVault 旧值残留，实测踩坑）。
+                    (function (cat) {
+                      chrome.storage.local.get([storageKey, storageKey + "_part0"], function (old) {
+                        const keys = [];
+                        if (old[storageKey]) {
+                          keys.push(storageKey);
+                          const frags = (old[storageKey].fragments) || 1;
+                          for (let i = 0; i < frags; i++) keys.push(storageKey + "_part" + i);
+                        }
+                        if (keys.length) chrome.storage.local.remove(keys);
+                        if (vault[cat]) {
+                          delete vault[cat];
+                          chrome.storage.local.set({ fileVault: vault });
+                        }
+                      });
+                    })(cat);
+                  }
+                  // f.skip（网页版有文件但超内联上限）：保留现有状态不动
+                });
+                if (changed) chrome.storage.local.set({ fileVault: vault });
+                // v0.8.13d（08-21 用户反馈「作品集文件上传了但投递没有」）：网页版作品集板块附件
+                // （key 形如 "<verId>|portfolio|<索引>|文件"）之前只存 rfa_files_<id>，从不进插件
+                // works → popup 投递读 works 为空 → 作品集附件不传。这里组装进 works（按卡片索引）。
+                try {
+                  const workKeys = Object.keys(files).filter(function (k) {
+                    return /^[^|]+\|portfolio\|\d+\|/.test(k) && files[k] && files[k].base64 && !files[k].skip;
+                  });
+                  if (workKeys.length) {
+                    chrome.storage.local.get(["works"], function (cur) {
+                      const works = Array.isArray(cur.works) ? cur.works.slice() : [];
+                      // v0.8.13e（08-21 用户反馈「插件录入的跟网页版不一样」）：works 是插件全局的，
+                      // 之前只追加不清理 → 切版本后残留上一个版本（如运营版）的作品集附件，
+                      // 而网页版当前是产品版 → 三方不一致。同步必须【以当前版本为准】：
+                      // 先清掉所有旧 attachment（保留 name/link 等文字），再写当前版本的作品集附件。
+                      works.forEach(function (w) { if (w) delete w.attachment; });
+                      workKeys.forEach(function (k) {
+                        const f = files[k];
+                        const parts = String(k).split("|");
+                        const idx = parseInt(parts[2], 10);
+                        if (isNaN(idx)) return;
+                        const storageKey = "rfa_file_work_" + idx;
+                        const mime = f.type || "application/octet-stream";
+                        const dataUrl = "data:" + mime + ";base64," + f.base64;
+                        const FRAG = 1024 * 1024;
+                        const frags = [];
+                        for (let i = 0; i < dataUrl.length; i += FRAG) frags.push(dataUrl.slice(i, i + FRAG));
+                        const batch = {};
+                        batch[storageKey] = { name: f.name, size: f.size || 0, manual: false, fragments: frags.length };
+                        frags.forEach(function (p, pi) { batch[storageKey + "_part" + pi] = p; });
+                        chrome.storage.local.set(batch);
+                        while (works.length <= idx) works.push({});
+                        works[idx] = works[idx] || {};
+                        works[idx].attachment = { name: f.name, size: f.size || 0, manual: false, storageKey: storageKey };
+                      });
+                      chrome.storage.local.set({ works: works });
+                    });
+                  }
+                } catch (e) {}
+              });
+            } catch (e) {}
+          });
+        }
+        let activeId = cur.activeProfileId || one.id;
+        chrome.storage.local.set({ profiles: profiles, activeProfileId: activeId }, function () {
+          const err = chrome.runtime.lastError;
+          document.dispatchEvent(new CustomEvent("__RFA_SETSTORAGE_RESULT__", { detail: { ok: !err, error: err ? err.message : null } }));
+        });
+      });
+      return;
+    }
+    // 全量版本：网页 versions → profiles 直接覆盖（按 id 对齐）
+    if (Array.isArray(payload.profiles)) {
+      chrome.storage.local.set({ profiles: payload.profiles, activeProfileId: payload.activeProfileId || null }, function () {
+        const err = chrome.runtime.lastError;
+        document.dispatchEvent(new CustomEvent("__RFA_SETSTORAGE_RESULT__", { detail: { ok: !err, error: err ? err.message : null } }));
+      });
+      return;
+    }
     chrome.storage.local.set(payload, function () {
       const err = chrome.runtime.lastError;
       document.dispatchEvent(new CustomEvent("__RFA_SETSTORAGE_RESULT__", { detail: { ok: !err, error: err ? err.message : null } }));
@@ -11143,11 +11719,29 @@ document.addEventListener("__RFA_SETSTORAGE__", function (e) {
     document.dispatchEvent(new CustomEvent("__RFA_SETSTORAGE_RESULT__", { detail: { ok: false, error: String(ex) } }));
   }
 });
+document.addEventListener("__RFA_GETSTORAGE__", function (e) {
+  const detail = (e && e.detail) || {};
+  const keys = Array.isArray(detail.keys) ? detail.keys : null;
+  try {
+    if (keys) {
+      chrome.storage.local.get(keys, function (res) {
+        document.dispatchEvent(new CustomEvent("__RFA_GETSTORAGE_RESULT__", { detail: res || {} }));
+      });
+    } else {
+      chrome.storage.local.get(null, function (res) {
+        document.dispatchEvent(new CustomEvent("__RFA_GETSTORAGE_RESULT__", { detail: res || {} }));
+      });
+    }
+  } catch (ex) {
+    document.dispatchEvent(new CustomEvent("__RFA_GETSTORAGE_RESULT__", { detail: { error: String(ex) } }));
+  }
+});
+
 
 // 构建戳：CDP 可直接读 document.documentElement.dataset.rfaBuild，
 // 用来确认「页面上跑的到底是不是我刚改的这版 content.js」。
 // 之前多次出现「改完码没重载扩展、对着旧码调了半天」的浪费，加这一行成本极低。
-try { document.documentElement.dataset.rfaBuild = "20260816-jdcasc1"; } catch (e) {}
+try { document.documentElement.dataset.rfaBuild = "20260817-certfix1"; } catch (e) {}
 
 // ============ 百度抓取模式（读优先，不依赖 CDP 读页面） ============
 // 百度 ATS 检测到 CDP Runtime.enable 会自毁 about:blank，所以不能用 CDP 读。
@@ -11241,3 +11835,6 @@ function rfaInjectCaptureBtn() {
 window.__RFA_CAPTURE__ = rfaCapture;
 if (document.body) rfaInjectCaptureBtn();
 else document.addEventListener('DOMContentLoaded', rfaInjectCaptureBtn);
+
+// 悬浮小球入口：页面载入即常驻一个小圆球，点它展开 / 收起大面板
+rfaInitLauncher();

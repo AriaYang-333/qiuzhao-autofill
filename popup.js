@@ -40,7 +40,9 @@ function applyDevGate() {
 applyDevGate();
 
 const DATA_TOKEN = "resume-autofill-2026"; // 与 data/apps-script 里的 APP_TOKEN 保持一致，防止他人乱发数据
-const DATA_ENDPOINT = "https://script.google.com/macros/s/AKfycbyO2tn87qAypgctenQVK_3pEn9zFTqUqHOKtstER-zLWCWgK0Mn7jyPfgr7OiFIrcTGNQ/exec"; // 开发者自己的 Google 表格接收地址（用户看不到、也改不了）
+// v0.8.13（08-21）：匿名使用统计改发【我们自己的后端】/api/analytics（国内可直连；原 Google 表格 script.google.com 被墙，
+// 真实用户收不到数据，弃用）。保留 opts.dataEndpoint 可自定义覆盖。
+const DATA_ENDPOINT = "https://get-offer-web-9g31.onrender.com/api/analytics";
 const UPDATE_INFO_URL = ""; // 可选：放 version.json 的公开 HTTPS 地址（如 GitHub Pages），用于顶部"!"更新提示
 
 // 生成一个随机、匿名、仅本机存储的安装ID，用于统计"独立用户数"（绝不关联任何人）
@@ -56,37 +58,31 @@ function getInstallId() {
 }
 
 // 匿名使用数据上报（写简历用）：仅当开启且配置了接收地址才发；绝不含个人信息
+// v0.8.13（08-21）：切到我们后端 /api/analytics（聚合格式 {date, events}）——
+//   open/parse 等事件 → dau（活跃设备，每设备每天一次，storage 节流）；autofill → fill_count（每次 +1）。
 async function reportUsage(event, extra = {}) {
   try {
     const opts = (await getStorage("options")).options || {};
     if (!opts.shareData) return;
     const installId = await getInstallId();
-    const tabs = await queryTabs();
-    const url = tabs[0]?.url || "";
-    let siteDomain = "", siteName = "";
-    try { const u = new URL(url); siteDomain = u.hostname; siteName = siteDomain.replace(/^www\./, ""); } catch (e) {}
-    let profileName = "";
-    if (event === "autofill") {
-      const rr = await getStorage(["profiles", "activeProfileId"]);
-      const p = (rr.profiles || []).find((x) => x.id === rr.activeProfileId);
-      profileName = p ? p.name : "";
+    const today = new Date().toISOString().slice(0, 10);
+    const events = {};
+    if (event === "autofill") { events.fill_count = 1; }
+    else { events.dau = 1; }
+    // dau 节流：同一天同一设备只上报一次活跃（近似独立设备数）
+    if (events.dau) {
+      const st = await getStorage("rfa_an_date");
+      if (st.rfa_an_date === today) return;
+      await setStorage({ rfa_an_date: today });
     }
     const payload = {
-      token: DATA_TOKEN,
-      ts: new Date().toISOString(),
+      date: today,
+      events,
       ver: PLUGIN_VERSION,
-      install_id: installId,
-      event,
-      site_domain: siteDomain,
-      site_name: siteName,
-      job_category: (currentProfile && currentProfile.basic && currentProfile.basic.targetPosition) || "",
-      profile_name: profileName,
-      ua: (navigator.userAgent.match(/(Chrome\/\d+|Edg\/\d+|Firefox\/\d+)/) || [""])[0] + " | " + (navigator.platform || ""),
-      ...extra,
+      install_id: installId, // 后端按日聚合不落库，仅审计口径备用
     };
     await fetch(opts.dataEndpoint || DATA_ENDPOINT, {
       method: "POST",
-      mode: "no-cors",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
@@ -322,13 +318,9 @@ document.addEventListener("DOMContentLoaded", async () => {
   await migrateLegacyFiles();
 
   const r = await getStorage([
-    "apiKey", "profiles", "activeProfileId", "fileVault", "works",
+    "profiles", "activeProfileId", "fileVault", "works",
     "options",
   ]);
-  if (r.apiKey) {
-    $("apiKey").value = r.apiKey;
-    setStatus("keyStatus", "已保存 Key", "ok");
-  }
   await refreshProfileSelect();
   const profiles = r.profiles || [];
   const active = profiles.find((p) => p.id === r.activeProfileId);
@@ -338,7 +330,12 @@ document.addEventListener("DOMContentLoaded", async () => {
   } else {
     clearEditor();
   }
-  renderWorks(r.works || []);
+  // 关键修复：作品集面板之前只渲染独立的 works 存储键，而网页「同步到插件」写入的是
+  // profile.portfolio，两者脱节 → 同步后面板仍空白。现在：同步进来的 profile.portfolio 优先显示，
+  // 否则才用本地手动维护的 works 兜底，确保「网页改了插件就同步」。
+  const fromProfile = buildWorksFromProfile(active && active.data);
+  const initialWorks = (fromProfile && fromProfile.length) ? fromProfile : (r.works || []);
+  renderWorks(initialWorks || []);
   if (r.options && r.options.uploadResumeFirst) $("uploadResumeFirst").checked = true;
   $("autoRestoreWorksAttachments").checked = !(r.options && r.options.autoRestoreWorksAttachments === false);
   showResumeState(r.fileVault);
@@ -348,6 +345,82 @@ document.addEventListener("DOMContentLoaded", async () => {
   initAnchors();
   relocateAddButtons();
   initScrollSpy();
+  // 打开即归顶：屏蔽浏览器/异步布局把视口带离顶部，避免「档案→项目经历」横跳。
+  // 根因：Chrome 扩展弹窗重开时会恢复【上次的滚动位置】并【重新聚焦上次那个输入框】，
+  // 而 #mainBody 是 overflow:auto 的滚动容器，重新聚焦下方「项目经历」的输入项会把它带下去。
+  // 对策：关掉 scrollRestoration（已在 popup.html head 内联脚本尽早设置）+ 这里反复归顶 + 清掉残留焦点。
+  try { if ("scrollRestoration" in history) history.scrollRestoration = "manual"; } catch (e) {}
+  const resetTop = () => {
+    // 清掉浏览器恢复出来的焦点（聚焦下方输入框是“自动下滑”的真正推手）
+    try { if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+    const mb = document.getElementById("mainBody");
+    if (mb) mb.scrollTop = 0;
+    if (document.documentElement) document.documentElement.scrollTop = 0;
+    if (document.body) document.body.scrollTop = 0;
+    if (window.scrollY) window.scrollTo(0, 0);
+    if (mb) mb.dispatchEvent(new Event("scroll")); // 让 scroll-spy 立即按顶端重算高亮
+  };
+  resetTop();
+  requestAnimationFrame(resetTop);
+  setTimeout(resetTop, 60);
+  setTimeout(resetTop, 200);
+  setTimeout(resetTop, 360);
+  setTimeout(resetTop, 600);
+  // 图、update banner 等异步渲染后再兜底一次
+  window.addEventListener("load", resetTop);
+
+  // 网页实时同步：storage 里 profiles / activeProfileId 变化时自动重渲染当前档案。
+  // 否则网页端「立即同步到插件」写入后，已打开的插件面板一直显示打开时的旧快照（看起来像空白/不更新）。
+  if (chrome.storage && chrome.storage.onChanged) {
+    chrome.storage.onChanged.addListener((changes, area) => {
+      if (area !== "local") return;
+      if (!changes.profiles && !changes.activeProfileId) return;
+      getStorage(["profiles", "activeProfileId", "fileVault", "works"]).then((rr) => {
+        try { refreshProfileSelect(); } catch (e) {}
+        const ps = rr.profiles || [];
+        const act = ps.find((x) => x.id === rr.activeProfileId);
+        if (act && act.data) { currentProfile = act.data; renderEditor(act.data); }
+        // 关键修复：网页同步把 profile.portfolio 灌入后，用同步数据即时填充作品集面板，
+        // 避免「点了同步却看不到作品」。
+        const syncedWorks = buildWorksFromProfile(act && act.data);
+        if (syncedWorks && syncedWorks.length) {
+          renderWorks(syncedWorks);
+        }
+      }).catch(() => {});
+    });
+  }
+
+  // 兜底锁（终极手段）：打开后短时间内锁死滚动在顶部，任何「浏览器恢复出来的滚动」都立即拉回 0，
+  // 不等时序、不跟 Chrome 抢跑。直到用户【主动】滚动（滚轮/触摸/键盘/点击）才解锁。
+  // 这样无论是滚动位置恢复还是焦点恢复，只要它把容器带离顶部，就触发 scroll 事件被强行归零。
+  (function lockScrollTop() {
+    const mb = document.getElementById("mainBody");
+    let locked = true;
+    const clamp = () => {
+      if (!locked) return;
+      if (mb && mb.scrollTop !== 0) {
+        mb.scrollTop = 0;
+        // 顺手清掉「恢复出来的焦点」：否则会出现“视图在顶部、却在下方的输入框里打字”的隐形坑
+        try { if (document.activeElement && document.activeElement !== document.body && document.activeElement.blur) document.activeElement.blur(); } catch (e) {}
+      }
+      if (window.scrollY) window.scrollTo(0, 0);
+    };
+    if (mb) mb.addEventListener("scroll", clamp, { passive: true });
+    window.addEventListener("scroll", clamp, { passive: true });
+    const unlock = () => {
+      locked = false;
+      if (mb) mb.removeEventListener("scroll", clamp);
+      window.removeEventListener("scroll", clamp);
+    };
+    // 用户任何主动输入都解锁（让正常的滚动/锚点跳转恢复生效）
+    ["pointerdown", "wheel", "touchmove", "keydown"].forEach((ev) => {
+      if (mb) mb.addEventListener(ev, unlock, { once: true, passive: true });
+      window.addEventListener(ev, unlock, { once: true, passive: true });
+    });
+    // 极端兜底：2.5s 后无论如何解锁，避免永久锁死
+    setTimeout(unlock, 2500);
+  })();
+
   checkForUpdate();
   maybeReportOpen();
 });
@@ -556,35 +629,6 @@ $("importProfileConfirmBtn").addEventListener("click", async () => {
   }
 });
 
-// 一键载入内置测试档案（林清越，全字段虚拟数据），零粘贴
-$("loadSeedBtn").addEventListener("click", async () => {
-  const st = $("importProfileStatus");
-  st.textContent = "正在载入内置测试档案…";
-  st.style.color = "#888";
-  try {
-    const url = chrome.runtime.getURL("full_profile_seed.json");
-    const resp = await fetch(url);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const data = await resp.json();
-    const ok = await addProfileFromData(data, st);
-    if (ok) {
-      st.textContent = "已载入内置测试档案「林清越」为当前简历";
-      st.style.color = "#7ec699";
-      setTimeout(() => { $("importPanel").hidden = true; }, 1500);
-    }
-  } catch (e) {
-    st.textContent = "自动载入失败：" + e.message + "（请改用「导入」按钮粘贴 JSON）";
-    st.style.color = "#e06c75";
-  }
-});
-
-/* ---------- API Key ---------- */
-$("saveKey").addEventListener("click", () => {
-  const key = $("apiKey").value.trim();
-  if (!key) return setStatus("keyStatus", "请输入 Key", "err");
-  setStorage({ apiKey: key }).then(() => setStatus("keyStatus", "已保存", "ok"));
-});
-
 /* ---------- 文档上传（Word/PDF 自动提取文字） ---------- */
 $("docFile").addEventListener("change", async (e) => {
   const file = e.target.files[0];
@@ -638,16 +682,16 @@ $("parseBtn").addEventListener("click", async () => {
 /* ---------- 保存当前简历 ---------- */
 function worksToPortfolio(works) {
   return (works || [])
-    .filter((w) => w && (w.link || w.desc || w.password))
-    .map((w) => {
-      const m = String(w.desc || "").match(/^【([^】]+)】\s*(.*)$/);
-      return {
-        name: m ? m[1].trim() : "",
-        link: w.link || "",
-        description: m ? m[2].trim() : (w.desc || ""),
-        password: w.password || "",
-      };
-    });
+    // 关键修复：旧逻辑只保留「有 link/desc/password」的作品，导致只有名称（或只有名称+链接）的作品在保存时被整条丢弃，
+    // 网页同步过来的作品集因此在插件里全部消失。现在：只要有任一有效字段就保留。
+    .filter((w) => w && (w.name || w.link || w.desc || w.password || w.date))
+    .map((w) => ({
+      // 关键修复：姓名直接取自 w.name，不再从 desc 的「【名称】」前缀里抠（旧写法会丢名称）。
+      name: (w.name || "").trim(),
+      link: w.link || "",
+      description: (w.desc || "").trim(),
+      password: w.password || "",
+    }));
 }
 async function saveProfileFromEditor() {
   if (!currentProfile && !$("basicEditor").children.length) return;
@@ -1055,7 +1099,7 @@ function buildWorksFromProfile(profile) {
       out.push({
         name: w.name || "",
         link: w.link || "",
-        desc: (w.name ? "【" + w.name + "】 " : "") + (w.description || ""),
+        desc: (w.description || ""),
         password: w.password || "",
         attachment: null,
       });
@@ -1536,7 +1580,24 @@ function ensureMonthClose() {
 }
 
 /* ---------- 出生年月日历（年 → 月 → 日）---------- */
+// 规范化日期字符串：网页端可能以 "2001.03.07" / "2019.09" / "2001年03月07日" 等形式传入，
+// 日历控件内部按 "YYYY-MM-DD" 解析（split("-")），这里统一转成 dash 格式，
+// 否则 "2001.03.07" 无法被 split("-") 识别，会一直显示「请选择 年 / 月 / 日」的空占位。
+function normalizeDateStr(s) {
+  if (!s) return "";
+  const raw = String(s).trim();
+  if (!/\d/.test(raw)) return raw; // 非日期串（如「至今」）原样保留，避免丢数据
+  let t = raw.replace(/[.\/年月日]/g, "-").replace(/-+/g, "-").replace(/^-+|-+$/g, "");
+  t = t.replace(/[^\d-]/g, "");
+  const p = t.split("-").filter(Boolean);
+  if (!p.length) return raw;
+  const y = p[0];
+  const m = p[1] ? String(p[1]).padStart(2, "0") : "";
+  const d = p[2] ? String(p[2]).padStart(2, "0") : "";
+  return [y, m, d].filter(Boolean).join("-");
+}
 function renderMonthPicker(container, key, current) {
+  current = normalizeDateStr(current);
   container.classList.add("month-single");
   ensureMonthClose();
   container.innerHTML = `
@@ -1657,6 +1718,41 @@ function renderEditor(profile) {
   renderKV("aiSkillsEditor", profile.aiSkills, AI_SKILL_FIELDS);
   renderDevLang(profile.devLang);
   $("selfEvalEditor").value = profile.selfEval || "";
+  renderSyncedFiles();
+}
+
+// 展示网页端随同步传来的文件字节（base64），可下载到本机再上传招聘站
+async function renderSyncedFiles(){
+  const box = document.getElementById('syncedFilesList');
+  if(!box) return;
+  try{
+    const st = await new Promise(res=>chrome.storage.local.get(['activeProfileId'], res));
+    const aid = st.activeProfileId;
+    const files = await new Promise(res=>chrome.storage.local.get(['rfa_files_'+aid], res));
+    const map = files['rfa_files_'+aid] || {};
+    const keys = Object.keys(map);
+    if(!keys.length){ box.innerHTML = '<div class="empty-tip">尚未从网页同步文件（成绩单 / 作品 / 证书 / 专利等）。</div>'; return; }
+    box.innerHTML = '';
+    keys.forEach(k=>{
+      const f = map[k];
+      const wrap = document.createElement('div');
+      wrap.className = 'edit-card';
+      const label = k.split('|').slice(1).join(' / ');
+      if(f.skip){
+        wrap.innerHTML = `<div class="card-main"><div class="card-name">${escapeHtml(f.name||'文件')}</div><div class="card-sub">${label} · 超过 5MB 未同步，请手动上传到招聘站</div></div>`;
+      } else {
+        const info = document.createElement('div');
+        info.className = 'card-main';
+        info.innerHTML = `<div class="card-name">${escapeHtml(f.name||'文件')}</div><div class="card-sub">${label} · ${((f.size||0)/1024).toFixed(1)}KB</div>`;
+        const a = document.createElement('a');
+        a.className = 'btn btn-mini'; a.textContent = '⬇ 下载';
+        a.href = 'data:'+(f.type||'application/octet-stream')+';base64,'+f.base64;
+        a.setAttribute('download', f.name||'file');
+        wrap.appendChild(info); wrap.appendChild(a);
+      }
+      box.appendChild(wrap);
+    });
+  }catch(e){ if(box) box.innerHTML = '<div class="empty-tip">读取同步文件失败</div>'; }
 }
 
 // 字段顺序 / 标签已对齐网页落地版 our-plugin-web-v4.html（2026-08-16 用户要求）
@@ -1972,6 +2068,21 @@ function renderBasic(basic) {
       renderMonthPicker(row.querySelector(".month-single"), f.key, basic[f.key]);
       return;
     }
+    // v0.8.13：手机号拆两格——左「区号」下拉（data-key=phoneCc）+ 右手机号（data-key=phone）。
+    // 区号存进档案 basic.phoneCc（随简历版本走），保存/同步/填充自动跟随；不选=铁律（站点区号下拉留空提示手动确认）。
+    if (f.key === "phone") {
+      const ccVal = basic.phoneCc || "";
+      const ccOpts = [["", "区号"], ["86", "+86"], ["852", "+852"], ["886", "+886"], ["1", "+1"], ["65", "+65"], ["81", "+81"], ["82", "+82"], ["44", "+44"], ["61", "+61"]]
+        .map(([v, t]) => `<option value="${v}" ${v === ccVal ? "selected" : ""}>${t}</option>`).join("");
+      row.innerHTML = `<label class="field-label">${f.label}</label>
+        <div class="phone-split-wrap">
+          <select class="cc-sel" data-key="phoneCc">${ccOpts}</select>
+          <input class="edit-input" data-key="phone" value="${escapeHtml(basic.phone || "")}" placeholder="手机号">
+        </div>
+        <span class="phone-split-hint">选好区号后，填充时站点「手机号区号」下拉自动按它选；不选则档案没有就不动、留空提示手动确认。</span>`;
+      c.appendChild(row);
+      return;
+    }
     if (f.cascade) {
       row.innerHTML = `<label class="field-label">${f.label}</label><div class="cascade-row" data-cascade="${f.key}"></div>`;
       c.appendChild(row);
@@ -2244,13 +2355,12 @@ function initScrollSpy() {
     const el = document.getElementById(id);
     if (el) el.classList.toggle("active", on);
   }
-  // 仅横向滚动导航条，把当前激活项**居中**于导航条可视区；绝不调用 scrollIntoView/scrollTo 等会改动垂直滚动的 API，
-  // 否则与 scroll 事件形成反馈环抖动（铁律 08-13：scroll-spy 回调里绝对不能动滚动位置）。
+  // 横向导航条：把当前激活项**居中**于导航条可视区（用户明确要「中间高亮」那版）。
+  // 绝不调用 scrollIntoView/scrollTo 等会改动垂直滚动的 API（铁律 08-13：scroll-spy 回调里绝对不能动垂直滚动位置）。
   function centerNavItem(act) {
     if (!nav || !act) return;
     const navRect = nav.getBoundingClientRect();
     const aRect = act.getBoundingClientRect();
-    // 目标 scrollLeft = 让激活项中心对齐导航条中心
     const target = aRect.left - navRect.left + nav.scrollLeft - (navRect.width - aRect.width) / 2;
     nav.scrollLeft = Math.max(0, target);
   }
@@ -2575,12 +2685,25 @@ async function extractDocxText(buf) {
       catch (e) { continue; }
     }
     let docXml = new TextDecoder().decode(data);
-    docXml = docXml.replace(/<\/w:p>/g, "\n").replace(/<w:tab\/>/g, "\t");
-    const texts = [];
-    const re = /<w:t[^>]*>([\s\S]*?)<\/w:t>/g;
-    let m;
-    while ((m = re.exec(docXml))) texts.push(m[1]);
-    return texts.join("").replace(/<[^>]+>/g, "");
+    // 保留段落/表格/换行结构：先把结构标记换成分隔符，再整体去标签（分隔符保留）
+    docXml = docXml
+      .replace(/<w:tab\/>/g, "\t")
+      .replace(/<\/w:tc>/g, "\t")
+      .replace(/<\/w:tr>/g, "\n")
+      .replace(/<w:br\/>/g, "\n")
+      .replace(/<w:cr\/>/g, "\n")
+      .replace(/<\/w:p>/g, "\n");
+    let text = docXml.replace(/<[^>]+>/g, "");
+    // 解码 XML 实体（&amp; 必须最后解，避免双重解码）
+    text = text
+      .replace(/&lt;/g, "<").replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, h) => String.fromCodePoint(parseInt(h, 16)))
+      .replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(+d))
+      .replace(/&amp;/g, "&");
+    // 压缩多余空白/空行，减少噪声
+    text = text.replace(/[ \t]+\n/g, "\n").replace(/\n{3,}/g, "\n\n").trim();
+    return text;
   }
   return "";
 }
