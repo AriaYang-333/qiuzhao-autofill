@@ -2682,7 +2682,7 @@ const DATA_SCHEMA = 'v4b-20260820';
   try{ if(typeof DATA_SCHEMA==='undefined'){} }catch(e){}
   try{ raw = localStorage.getItem('rfa_versions_v2') || ''; }catch(e){}
   const schemaOk = (function(){ try{ return localStorage.getItem('rfa_schema')===DATA_SCHEMA; }catch(e){ return false; } })();
-  const hasTestMarker = /林清越|linqingyue|13800001234|Get Offer 校招网申助手|rfa-demo-seed/.test(raw);
+  const hasTestMarker = /13800001234|Get Offer 校招网申助手|rfa-demo-seed/.test(raw);
   const dirty = !schemaOk || hasTestMarker;
   // 命中旧/测试数据 → 丢弃内存解析结果，强制回到空白模板；未命中才用本地数据
   let loaded=null;

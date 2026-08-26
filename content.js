@@ -345,6 +345,14 @@ function isVisible(el) {
 function isFillable(el) {
   const tag = el.tagName.toLowerCase();
   if (tag === "button") return false;
+  // #561b（2026-08-26 北森）：北森顶部「上传简历/拖拽上传」区有个 textarea（粘贴简历文本用），
+  // 它会被 scanFields 当普通 textarea 扫到并被误填经历内容。凡祖先含「上传简历/拖拽/粘贴简历」语义的输入一律跳过。
+  if (tag === "textarea" || tag === "input") {
+    try {
+      const anc = el.closest('[class*="upload"], [class*="Upload"], [class*="drop"], [class*="Drop"]');
+      if (anc && /上传|拖拽|drag|粘贴|paste|resume|简历/i.test((anc.innerText || "").slice(0, 120))) return false;
+    } catch (e) {}
+  }
   // 飞书/字节系自定义下拉框（role=combobox 的输入框，含只读框内部 input）必须点开才能选。
   // 必须放在 readOnly 判断之前：只读下拉框内部 input 带 readonly，但下拉本身是要被点开选的，
   // 否则性别/学历/学历类型/语言/精通程度/社交平台等只读框全部被漏扫（这是 v0.6.x 一直没填上的根因）。
@@ -553,6 +561,19 @@ function getLabel(el) {
       t = t.replace(/[*＊]+/g, "").replace(/[:：]\s*$/, "").trim();
       const bad2 = /^$|^\d+\s*\/\s*\d+$|^请(输入|选择)|不正确|不匹配|不能为空|必填|格式错误/;
       if (t && t.length <= 24 && !bad2.test(t)) return t;
+    }
+    // #561b（2026-08-26 北森攻破）：北森（zhiye.com）的字段容器是 .form-item--phoenix，
+    // 容器文本就是完整 label（如「工作职责 0/2000」「单位名称」「出生日期 请选择」）。
+    // 旧逻辑 fieldBox 只认 apply-field/form-item 等 class，北森匹配不上 → label 全空 → 28 字段未填。
+    // 注意容器文本会带「0/2000」字数、其他字段名（form-part 是整行）——只取第一个中文短语。
+    const phBox = el.closest && el.closest(".form-item--phoenix, [class*='form-item--phoenix']");
+    if (phBox) {
+      const raw = (phBox.innerText || "").replace(/\s+/g, " ").trim();
+      // 取第一段中文标签（如「工作职责 0/2000」→「工作职责」；「出生日期 请选择」→「出生日期」）
+      const m = raw.match(/^([\u4e00-\u9fa5A-Za-z0-9（）()·/]{2,16})/);
+      const t = m ? m[1].replace(/^[＊*]+/, "").trim() : "";
+      const bad3 = /^$|^\d+\s*\/\s*\d+$|^请(输入|选择)|不正确|不匹配|不能为空|必填|格式错误/;
+      if (t && t.length <= 16 && !bad3.test(t)) return t;
     }
   }
   if (placeholder) return placeholder;
@@ -1585,6 +1606,8 @@ function isCombobox(el) {
   // 其可点盒子是 .ant-select-selector，内部 input 带 aria-haspopup="listbox"。
   // 不识别 → 这些站的所有下拉整批漏填（字节黄字段主因）。
   if (/\bant-select\b|\bant-select-selector\b|\bant-cascader\b/.test(cls)) return true;
+  // #561b（北森）：phoenix-select 输入型选择器，必须走 fillCombobox 的 phoenix 分支。
+  if (/phoenix-select/.test(cls)) return true;
   if ((el.getAttribute && el.getAttribute("aria-haspopup")) === "listbox") return true;
   return false;
 }
@@ -1729,7 +1752,9 @@ function queryOptionEls(scope) {
     '.ud__cascader__menu__item__label, [class*="cascader"] [class*="label"], [class*="cascader__item__label"], ' +
     // v0.7.1（#185）：腾讯 Element UI 下拉 / 级联选项节点
     '.el-select-dropdown__item, [class*="el-select-dropdown__item"], ' +
-    '.el-cascader-node, [class*="el-cascader__node"], [class*="el-cascader-menu"] [class*="item"]';
+    '.el-cascader-node, [class*="el-cascader__node"], [class*="el-cascader-menu"] [class*="item"], ' +
+    // #561b（北森）：phoenix-select 远程搜索后渲染的选项（实测结构：li.phoenix-selectList__listItem）
+    '.phoenix-select__option, [class*="phoenix-selectList"] [class*="listItem"], [class*="phoenix-selectList"] li, [class*="phoenix-select"] [class*="option"], [class*="phoenix"] [role="option"], [class*="phoenix-select__dropdown"] li, [class*="phoenix-select__dropdown"] [class*="item"]';
   const all = Array.from(document.querySelectorAll(sel)).filter(isVisible);
   // el 下拉：只保留「所属下拉面板可见」的那一组，排除其它被隐藏的同名选项
   const elFiltered = all.filter((el) => {
@@ -1752,6 +1777,172 @@ function queryOptionEls(scope) {
   }
   const dedup = useAll.filter((el) => !useAll.some((other) => other !== el && other.contains(el)));
   return dedup.length ? dedup : useAll;
+}
+
+// #561b（北森）：按文本找可见选项（phoenix-select 远程搜索后）。
+// 遍历 queryOptionEls() 的结果，文本包含目标文字即命中；返回可点击节点。
+function findVisibleOptionByText(text) {
+  if (!text) return null;
+  const t = String(text).trim();
+  const opts = queryOptionEls();
+  for (const o of opts) {
+    const ot = getText(o).trim();
+    if (ot && (ot === t || ot.indexOf(t) >= 0)) return o;
+  }
+  // 兜底：宽匹配（去掉多余空格/符号）
+  const compact = t.replace(/[\s（(]/g, "");
+  for (const o of opts) {
+    const ot = getText(o).trim().replace(/[\s（(]/g, "");
+    if (ot && ot.indexOf(compact) >= 0) return o;
+  }
+  return null;
+}
+
+// #561b（北森）：phoenix-date-picker 日历选择（出生日期/到岗时间/起止时间）。
+// 实测日历结构：
+//   .phoenix-date-picker / .phoenix-calendar（面板）
+//   .phoenix-calendar-header        → 显示「2004年1月」
+//   .phoenix-calendar-year-select   → 年份（点开选年）
+//   .phoenix-calendar-month-select  → 月份（点开选月）
+//   .phoenix-calendar-cell          → 日期格子（含 .phoenix-calendar-date 文字）
+// 策略：解析目标 yyyy-mm(-dd) → 先切到目标年（点 year-select 翻年/选年）→ 目标月 → 点目标日。
+async function pickPhoenixDate(box, phInput, value, label) {
+  try {
+    // 解析日期
+    let ym = String(value).match(/(\d{4})\s*[-/年]\s*(\d{1,2})(?:\s*[-/月]\s*(\d{1,2}))?/);
+    if (!ym) {
+      // 至今：尝试勾「至今」复选框
+      if (/至今|至\s*今|现在|在读|在职|present|now/i.test(String(value))) {
+        const ok = tickToNowCheckbox(box || phInput);
+        if (ok) return true;
+      }
+      return false;
+    }
+    const year = parseInt(ym[1], 10);
+    const month = parseInt(ym[2], 10);
+    const day = ym[3] ? parseInt(ym[3], 10) : 1;
+    // 找日历面板（点开后挂 body 或 box 附近）
+    const panelOf = () => {
+      const cands = Array.from(document.querySelectorAll(".phoenix-calendar, .phoenix-date-picker"));
+      for (const p of cands) {
+        const r = p.getBoundingClientRect();
+        const s = getComputedStyle(p);
+        if (r.width > 100 && r.height > 100 && s.display !== "none" && s.visibility !== "hidden") return p;
+      }
+      return null;
+    };
+    let panel = panelOf();
+    if (!panel) {
+      // 还没点开？补点一次
+      simulateClick(phInput);
+      await sleep(500);
+      panel = panelOf();
+    }
+    if (!panel) { rfaLog({ act: "phx-date-nopanel", label: String(label || "").slice(0, 14) }); return false; }
+    // 工具：点元素
+    const click = (el) => { try { simulateClick(el); } catch (e) {} };
+    // 当前面板显示的「年份」「月份」（header 文本如「2004年1月」；year-select 文本「2004年」）
+    const curYear = () => {
+      const ys = panel.querySelector(".phoenix-calendar-year-select");
+      if (ys) { const m = (ys.innerText || "").match(/(\d{4})/); if (m) return parseInt(m[1], 10); }
+      const h = panel.querySelector(".phoenix-calendar-header");
+      if (h) { const m = (h.innerText || "").match(/(\d{4})/); if (m) return parseInt(m[1], 10); }
+      return new Date().getFullYear();
+    };
+    const curMonth = () => {
+      const ms = panel.querySelector(".phoenix-calendar-month-select");
+      if (ms) { const m = (ms.innerText || "").match(/(\d{1,2})月/); if (m) return parseInt(m[1], 10); }
+      const h = panel.querySelector(".phoenix-calendar-header");
+      if (h) { const m = (h.innerText || "").match(/(\d{1,2})月/); if (m) return parseInt(m[1], 10); }
+      return new Date().getMonth() + 1;
+    };
+    // 翻年到目标年：点 year-select 打开年面板，找目标年点选；找不到则翻页
+    const goYear = async (target) => {
+      for (let guard = 0; guard < 12; guard++) {
+        const cy = curYear();
+        if (cy === target) return true;
+        const ys = panel.querySelector(".phoenix-calendar-year-select");
+        if (!ys) return false;
+        click(ys); await sleep(400);
+        // 年面板 cell（实测 .phoenix-calendar-year-panel-cell，文本纯年份）
+        const yearItems = Array.from(panel.querySelectorAll(".phoenix-calendar-year-panel-cell"))
+          .filter((el) => { const t = (el.innerText || "").trim(); return /^\d{4}$/.test(t) && el.getBoundingClientRect().width > 10; });
+        const hit = yearItems.find((el) => (el.innerText || "").trim() === String(target));
+        if (hit) { click(hit); await sleep(450); return true; }
+        // 目标年不在当前页：找上一页/下一页箭头（年面板里通常有两个切换按钮）
+        const arrows = Array.from(panel.querySelectorAll("[class*='year-panel'] [class*='arrow'], [class*='year-panel'] [class*='Arrow'], [class*='year-panel'] [class*='icon'], [class*='year-panel'] [class*='Icon'], [class*='year-panel'] button"))
+          .filter((el) => el.getBoundingClientRect().width > 8);
+        if (arrows.length >= 2) { click(arrows[1]); await sleep(400); continue; } // 第二个=下一年
+        if (arrows.length >= 1) { click(arrows[0]); await sleep(400); continue; }
+        // 无箭头：Esc 关掉年面板，从月视图的 header 箭头翻年（如有）
+        try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true })); } catch (e) {}
+        await sleep(250);
+        panel = panelOf() || panel;
+        const hArrows = Array.from(panel.querySelectorAll("[class*='header'] [class*='arrow'], [class*='header'] [class*='Arrow'], [class*='header'] [class*='icon'], [class*='header'] button"))
+          .filter((el) => el.getBoundingClientRect().width > 8);
+        if (hArrows.length >= 2) { click(hArrows[1]); await sleep(400); continue; }
+        return false;
+      }
+      return false;
+    };
+    // 翻月到目标月
+    const goMonth = async (target) => {
+      for (let guard = 0; guard < 8; guard++) {
+        const cm = curMonth();
+        if (cm === target) return true;
+        const ms = panel.querySelector(".phoenix-calendar-month-select");
+        if (!ms) return false;
+        click(ms); await sleep(400);
+        // 月面板 cell（实测 .phoenix-calendar-month-panel-cell，文本「3月」）
+        const monthItems = Array.from(panel.querySelectorAll(".phoenix-calendar-month-panel-cell"))
+          .filter((el) => { const t = (el.innerText || "").trim(); return /^\d{1,2}月$/.test(t) && el.getBoundingClientRect().width > 10; });
+        const hit = monthItems.find((el) => (el.innerText || "").trim() === target + "月");
+        if (hit) { click(hit); await sleep(450); return true; }
+        try { document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", keyCode: 27, which: 27, bubbles: true })); } catch (e) {}
+        await sleep(250);
+        return false;
+      }
+      return false;
+    };
+    // 1) 翻年
+    if (!(await goYear(year))) { rfaLog({ act: "phx-date-yearfail", label: String(label || "").slice(0, 14), year }); closeCombobox(box); return false; }
+    // 2) 翻月
+    if (!(await goMonth(month))) { rfaLog({ act: "phx-date-monthfail", label: String(label || "").slice(0, 14), month }); closeCombobox(box); return false; }
+    // 2.5) #569 安全阀：翻年翻月后必须确认 header 真的是目标年月，再点日。
+    //      否则翻页失败会停在本年（如 2026）只选对月，把「2019-09」错填成「2026-09」——
+    //      违反铁律「宁愿不填错」。header 不对就放弃，绝不让错误日期落进输入框。
+    panel = panelOf() || panel;
+    const hdrTxt = (panel.querySelector(".phoenix-calendar-header") || {}).innerText || "";
+    const hdrYm = hdrTxt.match(/(\d{4})\s*年\s*(\d{1,2})月/);
+    if (!hdrYm || parseInt(hdrYm[1], 10) !== year || parseInt(hdrYm[2], 10) !== month) {
+      rfaLog({ act: "phx-date-badnav", label: String(label || "").slice(0, 14), year, month, header: hdrTxt.slice(0, 16) });
+      // 清掉可能已写入的错误值（点年/点月可能已把错误日期提交进输入框）
+      try { setNativeValue(phInput, ""); dispatchInputEvent(phInput, ""); } catch (e) {}
+      closeCombobox(box);
+      return false;
+    }
+    // 3) 点目标日（面板可能因翻年翻月重渲染，重新取）
+    panel = panelOf() || panel;
+    const dayCells = Array.from(panel.querySelectorAll(".phoenix-calendar-cell")).filter((el) => el.getBoundingClientRect().width > 10);
+    const dayHit = dayCells.find((el) => (el.innerText || "").trim() === String(day));
+    if (!dayHit) {
+      // 日可能被「今天」覆盖或面板没刷出来，兜底直接找文字=day 的 cell
+      const all = Array.from(panel.querySelectorAll("[class*='calendar'] td, [class*='calendar'] [class*='cell']"));
+      const hit2 = all.find((el) => (el.innerText || "").trim() === String(day) && el.getBoundingClientRect().width > 10);
+      if (!hit2) { closeCombobox(box); return false; }
+      click(hit2); await sleep(350);
+    } else {
+      click(dayHit); await sleep(350);
+    }
+    // 4) 校验：box 文本不再是「请选择」
+    const after = (box.innerText || "").trim().replace(/\s+/g, " ");
+    const ok = after.indexOf(String(year)) >= 0 && after !== "请选择";
+    rfaLog({ act: "phx-date-ok", label: String(label || "").slice(0, 14), val: String(value).slice(0, 14), ok });
+    return ok;
+  } catch (e) {
+    rfaLog({ act: "phx-date-err", label: String(label || "").slice(0, 14), err: String(e).slice(0, 80) });
+    return false;
+  }
 }
 
 // 取选项真正可点击的节点：优先 .ud__select__list__item 容器，点击它才会触发选中。
@@ -1898,6 +2089,95 @@ async function fillCombobox(el, rawValue, field) {
   const readonly = isElSel
     ? true
     : (el.getAttribute && el.getAttribute("readonly") !== null) || /readOnly/.test(boxCls) || isBrick;
+
+  // #561b（2026-08-26 北森攻破）：北森系统（zhiye.com）的 phoenix-select 是**输入搜索型选择器**
+  // （class 含 phoenix-select--editable，内部 input 非 readonly），不是点击弹出预渲染选项的下拉。
+  // 实测（CDP 键盘/execCommand 双验证）：
+  //   · 点开不弹任何选项层，必须**输入文字**才触发远程搜索渲染选项；
+  //   · 且 React 受控组件**拒绝 setNativeValue/合成 input 事件**（input.value 打完仍空串），
+  //     只有 document.execCommand('insertText') 能触发其内部 state 更新（选项层出现「英语」）。
+  //   · 但**日期类下拉**（出生日期/到岗时间/起止时间）点开弹的是 **phoenix-date-picker 日历面板**
+  //     （phoenix-calendar-header/year-select/month-select/cell），输入文字无效，必须翻日历点选。
+  // 适配：先判断值是否为日期 → 是则走日历选择；否则走文本搜索选择。
+  const boxClsL = boxCls.toLowerCase();
+  if (/phoenix-select/.test(boxClsL) || /zhiye\.com/i.test(location.hostname)) {
+    const phInput = box.querySelector("input.phoenix-select__input, input") || box;
+    // 元素可能在视口外（北森表单很长），必须先滚到可见再操作
+    try { phInput.scrollIntoView({ block: "center" }); } catch (e) {}
+    await sleep(300);
+    // 点开（完整事件序列）
+    simulateClick(phInput);
+    await sleep(400);
+    // ── 日期值：走 phoenix 日历选择 ──────────────────────────────────────────
+    const isDateVal = /^\s*\d{4}[-/年]\s*\d{1,2}([-/月]\s*\d{1,2})?/.test(String(valStr)) ||
+                      /至今|至\s*今|现在|在读|在职|present|now/i.test(String(valStr));
+    if (isDateVal) {
+      const dOk = await pickPhoenixDate(box, phInput, String(valStr), label);
+      rfaLog({ act: "phoenix-date", label: label.slice(0, 16), val: String(valStr).slice(0, 16), ok: dOk });
+      closeCombobox(box);
+      return dOk;
+    }
+    try { phInput.focus(); } catch (e) {}
+    // #568（2026-08-26 实测修正）：phoenix-select 分两类——
+    //   · 点击型（到岗时间"一周内/一个月内…"、掌握程度"入门/熟练/精通/母语"等）：
+    //     点开后**选项直接预渲染**，无需输入；直接文本匹配点选即可。
+    //   · 搜索型（语言类型"英语"等）：点开后无选项，必须输入文字才触发远程搜索。
+    // 顺序：先查预渲染选项（点击型），没有再输入搜索（搜索型）。绝不能先输入——
+    // 对点击型先输入会把已渲染的选项过滤掉，且值不在选项里时 execCommand 无效。
+    // 多值（phoenix-select--multi，如期望工作城市"北京、上海"）：逐段输入点选，面板保持展开。
+    const isMulti = /phoenix-select--multi/.test(boxClsL);
+    const parts = String(valStr).split(/[、,，;；\s]+/).filter(Boolean);
+    let okAll = true;
+    for (let pi = 0; pi < parts.length; pi++) {
+      const part = parts[pi];
+      let optEl = findVisibleOptionByText(part);
+      if (!optEl) {
+        // 搜索型：execCommand 输入（React 受控组件唯一认的输入方式）
+        try {
+          fillByExecCommand(phInput, part);
+        } catch (e) { okAll = false; break; }
+        // 等远程选项渲染（最多 ~4s）
+        for (let w = 0; w < 10; w++) {
+          await sleep(400);
+          optEl = findVisibleOptionByText(part);
+          if (optEl) break;
+        }
+      }
+      if (!optEl) {
+        // 值不在选项里（如档案"流利" vs 选项"入门/熟练/精通/母语"；日期 vs "一周内"）：
+        // 铁律「宁愿不填错」——不硬选，留空由用户手动确认。
+        rfaLog({ act: "phoenix-nomatch", label: label.slice(0, 16), val: String(part).slice(0, 16) });
+        okAll = false;
+        break;
+      }
+      try { optEl.scrollIntoView({ block: "center" }); } catch (e) {}
+      try { simulateClick(optEl); } catch (e) {}
+      await sleep(350);
+      // 多选：面板保持展开，清空搜索词再选下一段；点选后 input 可能残留搜索文字，需清掉
+      if (pi < parts.length - 1) {
+        if (isMulti) {
+          try { setNativeValue(phInput, ""); dispatchInputEvent(phInput, ""); } catch (e) {}
+          await sleep(200);
+          // 多选点选后面板可能收起（若收起则重新点开）
+          const stillOpen = !!findVisibleOptionByText("请选择") || !!document.querySelector(".phoenix-selectList");
+          if (!stillOpen) {
+            simulateClick(phInput);
+            await sleep(300);
+          }
+        } else {
+          closeCombobox(box);
+          simulateClick(phInput);
+          await sleep(300);
+        }
+      }
+    }
+    closeCombobox(box);
+    // 校验：输入框已带所选值（值不再是"请选择"占位）即成功
+    const curVal = (box.innerText || "").trim().replace(/\s+/g, " ");
+    const okPhoenix = okAll && (curVal.indexOf(String(valStr)) >= 0 || (phInput.value || "").indexOf(String(valStr)) >= 0 || (isMulti && parts.every(function (p) { return curVal.indexOf(p) >= 0; })));
+    rfaLog({ act: "phoenix-fill", label: label.slice(0, 16), val: String(valStr).slice(0, 16), ok: okPhoenix, multi: isMulti, parts: parts.length });
+    return okPhoenix;
+  }
 
   // v0.7.1（#185）：开之前先把别的面板关干净，并记录「打开前已可见的面板」，
   // 开完之后用差集拿到「这次新开的那个面板」，后续所有取选项都锁定在它里面。
@@ -5580,7 +5860,9 @@ function matchFieldCore(field, profile, indices) {
     const idx = indices.projects;
     const item = (profile.projects || [])[idx] || {};
     if (/项目名|项目名称|课题|project name/.test(label)) return item.name;
-    if (/角色|职务|岗位|role|position/.test(label)) return item.role;
+    // #561（2026-08-26）：Moka 项目卡的「职位名称/职位角色」→ 填项目岗位(role)。
+    // 旧正则 /角色|职务|岗位|role|position/ 匹配不到「职位名称」（含"职位"但无"岗位/角色/职务"）→ 一直漏填。
+    if (/职位名称|职位角色|角色|职务|岗位|担任|role|position/.test(label)) return item.role;
     if (/开始|起始|start/.test(label)) return item.start;
     if (/结束|截止|end/.test(label)) return item.end;
     if (/起止|时间|年月|period/.test(label)) return formatRange(item.start, item.end);
@@ -5597,19 +5879,28 @@ function matchFieldCore(field, profile, indices) {
       const pj = (profile.portfolio || [])[indices.projects];
       return item.link || (pj && pj.link) || null;
     }
-    // #561（2026-08-26 用户拍板）：项目「描述/职责/成果」——多框分开、单框合并。
-    // 用户原话：项目经历页有「项目描述」和「项目中的职责」两个框就该分开填（描述←description、职责←responsibilities），
-    // 不能全填成一样。历史回归根因：旧正则只认 /项目职责/（匹配不到「项目中的职责」，中间隔着"中的"），
-    // 它和「项目描述」一起滑进最后的兜底 /描述|...|职责|.../ 都返回 _pj(合并段) → 两个框一模一样。
-    // 修复：板块内职责/描述类字段 ≥2 个 → 各自对号入座；只有 1 个 → 合并 描述+职责+成果 保证完整。
+    // #561（2026-08-26 用户拍板·最终版）：项目「描述/职责/成果/链接」——大框塞全、小框单填。
+    // 用户原话（21:58 澄清）：「项目描述」框应把 项目描述+项目职责+项目成果+项目链接 全部放进去（填全）；
+    // 「项目中的职责」框只单填 项目职责（单独拎出来，不掺别的）；
+    // 职位名称/职位角色 → 填项目岗位(role)。任何两个框绝不填成一模一样。
+    // 历史回归根因：旧正则 /项目职责/ 匹配不到「项目中的职责」（中间隔着"中的"），它和「项目描述」
+    // 一起滑进兜底都返回合并段 → 一模一样。v0.8.15 曾改为"描述只填 description"，
+    // 用户纠正：项目描述框也要填全（描述+职责+成果+链接），职责框才单填职责。
     const _pj = [item.description, item.responsibilities, item.achievements].filter(Boolean).join("\n");
+    // 项目描述「塞全」：描述 + 职责 + 成果 + 链接
+    const _pjFull = [item.description, item.responsibilities, item.achievements, item.link]
+      .filter(Boolean).join("\n");
     const pDutyN = (__RFA_DUTY_COUNT__ && __RFA_DUTY_COUNT__.projects) || 0;
     const pSingleBox = pDutyN <= 1; // 整个项目板块只有 1 个职责/描述类框 → 合并
-    if (/项目.*职责|职责/.test(label)) return pSingleBox ? _pj : item.responsibilities || _pj;
-    if (/项目成果|成果/.test(label)) return pSingleBox ? _pj : item.achievements || _pj;
+    // 项目中的职责 / 职责 / 项目职责 → 只单填 responsibilities（绝不掺描述/成果/链接）
+    if (/项目.*职责|职责/.test(label)) return item.responsibilities || _pj;
+    // 项目成果 → 只单填 achievements
+    if (/项目成果|成果/.test(label)) return item.achievements || _pj;
+    // 项目描述/项目内容/描述/简介/背景/经历 → 塞全（描述+职责+成果+链接）
     if (/项目描述|项目内容|项目介绍|描述|简介|背景|经历|内容|description/i.test(label))
-      return pSingleBox ? _pj : item.description || _pj;
-    if (/负责|产出|业绩|achieve|result/.test(label)) return pSingleBox ? _pj : _pj;
+      return pSingleBox ? _pjFull : _pjFull;
+    // 兜底：负责/产出/业绩 等描述类残余 → 塞全（单框合并语义）
+    if (/负责|产出|业绩|achieve|result/.test(label)) return pSingleBox ? _pjFull : _pjFull;
     return null;
   }
 
@@ -10165,6 +10456,9 @@ async function runAutofill(profile, fileVault, options, works) {
           }
         }
         const f = fields.find((x) => x.idx === m.idx);
+        // #561b（北森）：长表单的字段多在视口外（北森表单 2000px+），
+        // 组件点击/输入对不可见元素无效 → 填充前统一滚到可见。对其它站点无副作用。
+        try { el.scrollIntoView({ block: "center" }); await sleep(120); } catch (e) {}
         const ok = await fillFieldGuarded(el, m.value, f);
         highlight(el, ok ? "ok" : "warn");
         if (ok) {
@@ -11428,7 +11722,7 @@ async function autoRestoreWorkAttachments() {
 function maybeAutoRestoreWorkAttachments() {
   // #552 铁律（2026-08-26 用户拍板）：插件跑完一轮即死，绝不自动反应。
   // 页面加载自动上传作品集附件曾在用户「点保存后」随页面刷新再次触发，
-  // 把存储里的附件重新塞进文件框（真实事故：林清越测试文件覆盖用户文件）。
+  // 把存储里的附件重新塞进文件框（真实事故：内置测试档案的附件覆盖了用户文件）。
   // 作品集附件只允许在用户主动点「一键填充」时由 runAutofill 上传，
   // 因此本函数不再被自动调用；保留定义仅为兼容旧引用，永不自动执行。
   return;
@@ -11811,7 +12105,7 @@ document.addEventListener("__RFA_GETSTORAGE__", function (e) {
 // 构建戳：CDP 可直接读 document.documentElement.dataset.rfaBuild，
 // 用来确认「页面上跑的到底是不是我刚改的这版 content.js」。
 // 之前多次出现「改完码没重载扩展、对着旧码调了半天」的浪费，加这一行成本极低。
-try { document.documentElement.dataset.rfaBuild = "20260826-r556-560"; } catch (e) {}
+try { document.documentElement.dataset.rfaBuild = "20260826-r556-570"; } catch (e) {}
 
 // ============ 百度抓取模式（读优先，不依赖 CDP 读页面） ============
 // 百度 ATS 检测到 CDP Runtime.enable 会自毁 about:blank，所以不能用 CDP 读。
