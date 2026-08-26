@@ -117,7 +117,7 @@ function rfaMark(stage) {
 // v0.7.1（#187 蔚来）：但「是否为全日制**在校**学生」是另一回事——它是「你是否 currently enrolled」的
 //   校区合规题，且蔚来把这两个问题塞进了「社交账号」板块标题下方，导致 guessSection 把它们归到 social，
 //   fallbackMap 的 social 分支对不认识的标签直接吐社交账号 ID（实测把「全日制在校学生」填成了
-//   lin_qingyue_2026）。必须拦住。注意只拦「全日制+在校」组合，不能拦裸「是否全日制」——
+//   exampleuser_2026）。必须拦住。注意只拦「全日制+在校」组合，不能拦裸「是否全日制」——
 //   后者在 education 段 2546 行要从 eduType 推导 是/否，必须在 FORBIDDEN 之后执行，否则会回归。
 const FORBIDDEN_RE =
   /调剂|是否接受|是否到岗|是否应届|是否统招|是否在职|同意.*条款|隐私政策|用户协议|我已阅读|确认无误|承诺真实|信息真实|实习时长|到岗时间|可实习|每周到岗|入职时间|期望薪资|薪资范围|薪资待遇|薪资要求|全日制.*在校学生|在校学生|期望工作地点|意向工作地点/;
@@ -303,7 +303,7 @@ let RFA_USER_PHONE_CC = "";
 // 只认「+ 开头」的号码（无 + 视为无国家码，铁律：不猜）；
 // 按已知国家码列表最长优先匹配，且要求后面至少 5 位本地号码——
 // 修历史 bug：原 /^\+(\d{1,4})/ 贪婪匹配会把手机号开头吞掉
-//（"+86 17396253243" 被误取成 "8617"、"+852 61234567" 被误取成 "8526"）。
+//（"+86 13800138000" 被误取成 "8617"、"+852 61234567" 被误取成 "8526"）。
 const KNOWN_CC = ["886", "852", "853", "86", "65", "81", "82", "44", "61", "33", "49", "91", "7", "1"];
 function extractCcFromPhone(phone) {
   const s = String(phone || "").replace(/[\s\-()]/g, "");
@@ -3325,9 +3325,9 @@ async function fillFieldAsync(el, value, field) {
   // Moka 的「学校名称 / 专业名称 / 公司名称」不是普通文本框，而是**远程搜索下拉**：
   // 打字会异步拉候选，**不点候选项就等于没填 —— 失焦瞬间 input.value 被组件清成空串**。
   // 真机实测（robosense，见 /tmp/batch/e_moka_ac.js）：
-  //   setNativeValue(inp,'清华大学') → 1.2s 后弹出
-  //     清华大学 / 清华大学法学院 / 清华大学医学院 / 台湾清华大学 / 没有找到学校？ / 添加学校全称
-  //   然后 blur → inp.value === ""   ← 就是「映射明明取到了清华大学、页面却始终空白」的真相
+  //   setNativeValue(inp,'示例学校') → 1.2s 后弹出
+  //     示例学校 / 示例学校法学院 / 示例学校医学院 / 示例学校 / 没有找到学校？ / 添加学校全称
+  //   然后 blur → inp.value === ""   ← 就是「映射明明取到了示例学校、页面却始终空白」的真相
   // 候选项类名是 **sd-Menu-item-xxxx**，注意它和 tryPickGenericSelect 里已覆盖的
   // `sd-Menu-content-item` **不是同一个类名**（少了 content-），所以那边一个都匹配不到。
   // 另：「没有找到学校？」「添加学校全称」是兜底入口不是真选项，必须排除，
@@ -3556,7 +3556,7 @@ function findSelectOption(opts, valStr, label) {
     // (c2) 【2026-08-10 大疆实测补的反向分支】(c) 只处理了「站点选项是场景词、简历值是等级词」，
     //      大疆/Moka 的「掌握程度 / 听说 / 读写」恰好**反过来**：
     //          站点选项 = 一般 / 良好 / 熟练 / 精通（纯等级词）
-    //          简历值   = 无障碍商务沟通 / 母语（场景词，见 full_profile_seed languages[].level）
+    //          简历值   = 无障碍商务沟通 / 母语（场景词，见源文档 languages[].level）
     //      两边一个字都对不上 → findSelectOption 返回 null → 三个下拉长期留白。
     //      实测大疆语言板块 8 个控件因此全空，是 84%→96% 最大的一块缺口。
     //      映射按「等级阶梯」保守取值：母语→精通、无障碍商务沟通→熟练（IELTS 7.5 这种写精通偏满，
@@ -4665,7 +4665,7 @@ async function tryPickMokaAutocomplete(el, value, field) {
     el.focus();
     el.dispatchEvent(new FocusEvent("focus", { bubbles: true }));
     await sleep(120);
-    // v0.8.7：先用**前 2~4 个字**做关键词。真机实测「清华」能召回 7 条，
+    // v0.8.7：先用**前 2~4 个字**做关键词。真机实测「示例」能召回 7 条，
     // 而整串「计算机科学与技术」这种长词在部分站会 0 召回。
     // v0.8.9：两级关键词——先长后短。长词召回更准，短词召回率更高。
     const kwLong = val.length > 4 ? val.slice(0, Math.max(2, Math.min(4, val.length - 1))) : val;
@@ -4676,8 +4676,8 @@ async function tryPickMokaAutocomplete(el, value, field) {
     // 从来没发过 `input` 事件。Moka 是 React 受控组件，onChange 只监听 input —— 没有
     // input 事件 → state 不变 → 远程搜索请求根本不发出 → 页面上一个 sd-Dropdown 都没有，
     // 于是日志里恒为 `moka-autocomplete-none pops:0`，学校/专业永远填不进去。
-    // CDP 真机对照实验：`nativeSet.call(el,'清华') + new Event('input')` → pops:2、候选
-    // 首项「清华大学」；去掉 input 事件 → pops:0。差别就在这一行。
+    // CDP 真机对照实验：`nativeSet.call(el,'示例') + new Event('input')` → pops:2、候选
+    // 首项「示例学校」；去掉 input 事件 → pops:0。差别就在这一行。
     let opts = [];
     let kw = kwLong;
     for (const k of kws) {
@@ -4709,8 +4709,8 @@ async function tryPickMokaAutocomplete(el, value, field) {
       return null; // 不是搜索框 → 交回上层按普通文本处理
     }
 
-    // 2) 选项匹配：完全相等 > 候选以输入开头（清华大学 → 清华大学法学院）> 输入以候选开头 > 首项。
-    //    「台湾清华大学」这类含子串但不同校的必须排在后面，所以不能用 indexOf>=0 做首选。
+    // 2) 选项匹配：完全相等 > 候选以输入开头（示例学校 → 示例学校法学院）> 输入以候选开头 > 首项。
+    //    「示例学校」这类含子串但不同校的必须排在后面，所以不能用 indexOf>=0 做首选。
     const eq = opts.find((o) => o.text === val);
     const startsWithVal = opts.find((o) => o.text.indexOf(val) === 0);
     const valStartsWith = opts.find((o) => val.indexOf(o.text) === 0);
@@ -4839,13 +4839,13 @@ function closeMokaPopups() {
 // 采集 Moka 搜索下拉的候选项。
 //
 // 【2026-08-08 CDP 真机实测，v0.8.6 的注释是错的，已按实测重写】
-// 在速腾 robosense 页对「请输入就读学校」打「清华」，1.2s 后弹层结构是：
+// 在速腾 robosense 页对「请输入就读学校」打「示例」，1.2s 后弹层结构是：
 //   sd-Dropdown-dropdown-1c-rG          ← 浮层根（body 下的 portal）
 //     sd-Menu-container-3HY1z           ← 每个候选一层
 //       sd-Menu-content-2vKOA sd-Menu-leftItem-2sehK
 //         sd-Menu-content-item-37fPj    ← 真正的文字节点
-//   文本：清华大学 / 台湾清华大学 / 清华大学医学院 / 清华大学法学院 / 清华大学公共管理学院 /
-//         西安建筑科技大学华清学院 / 广东清华职业培训学校
+//   文本：示例学校 / 示例学校 / 示例学校医学院 / 示例学校法学院 / 示例学校公共管理学院 /
+//         示例独立学院 / 广东示例职业培训学校
 // 所以真实类名是 **sd-Menu-content-item**，和 sd-Select 下拉用的是同一套；
 // v0.8.6 写成 `[class*="sd-Menu-item"]`（少了 content-）→ **一个都匹配不到** →
 // tryPickMokaAutocomplete 在 `if(!opts.length) return null` 处静默退出、连日志都不打，
@@ -4947,7 +4947,7 @@ function validateValueForField(value, field) {
 
   // 链接/URL 字段：应当至少包含一个点或协议头，避免把描述文字塞进来
   // v0.7.1 例外（#167）：字节社交卡的字段名就叫「URL / ID」——它同时接受网址和账号 ID。
-  // 微信号 lin_qingyue_2026、B站 UID 88480001 这类合法账号里根本没有点，
+  // 微信号 exampleuser_2026、B站 UID 88480001 这类合法账号里根本没有点，
   // 原来被这条 URL 校验一律判为脏值丢弃 → 8 条社交里 5 条明明取到了值却填不进去
   // （表现和「映射没做」一模一样，极难排查）。标签里带 ID / 账号 / 号 的一律放行。
   const _urlAllowsId = /\bid\b|id\s*[/／、]|[/／、]\s*id|账号|帐号|用户名|昵称/.test(label);
@@ -5077,7 +5077,7 @@ function matchFieldCore(field, profile, indices) {
   // ── v0.8.3（#266）：拼多多专属兜底 ────────────────────────────────────────────
   // 拼多多「编辑」展开后把各类字段平铺在同一张卡里，section 路由不一定命中，
   // 且部分字段（出生月份/证件类型）无 <label> 只有 placeholder。直接按标签/占位兜底最稳。
-  // 数据全部来自内置测试档案（full_profile_seed.json），不涉及任何隐私。
+  // 数据全部来自用户自己导入的档案，不涉及任何隐私。
   if (/pddglobalhr\.com/i.test(location.hostname)) {
     const _b = profile.basic || {};
     const _edu = (profile.education || [])[0] || {};
@@ -5269,7 +5269,7 @@ function matchFieldCore(field, profile, indices) {
     // 因此改为主动给值：默认「中国 +86」；若档案手机号自带别国国家码（+852/+1…）则跟随它。
     // v0.8.13（字节修复）：字节/飞书社招的区号下拉 label 就是「手机号码」（无「区号/86」字样），
     //   且是 div 下拉形态——旧判定命中不了，matchValue 会落入下方 /手机|电话/ 规则把「手机号本身」
-    //   （如 13800001234）当值返回 → 输入框型下拉用它搜索 → 过滤出含「1340」的邻近选项 → 错选 +1340（真机铁证）。
+    //   （如 13800000000）当值返回 → 输入框型下拉用它搜索 → 过滤出含「1340」的邻近选项 → 错选 +1340（真机铁证）。
     //   故放宽：div 下拉形态 + label 含 手机/电话/区号/86 → 一律按区号下拉处理，返回「+档案区号」。
     if (field.type === "div" && /(如您是中国大陆籍|区号|86.*手机|手机.*86|手机号.*区号|国家.*区号|区号|手机号码|手机号|手机|电话)/.test(label)) {
       // v0.8.13：优先级 = 用户面板设置（档案 basic.phoneCc，如 "86"）> 档案自带国家码（+852/+86 等，安全提取）> 无则 null（铁律：不默认 +86）。
@@ -5286,7 +5286,7 @@ function matchFieldCore(field, profile, indices) {
     // v0.7.0（腾讯）：微信号 / QQ 号
     // v0.7.2：微信 / QQ 先读 basic，读不到再回落到 social 数组按平台名找。
     // 实测（08-06 腾讯真机）：档案 basic 里根本没有 wechat/qq 字段（popup 也没有这两个录入项），
-    // 但 social 里明明存着 {platform:"微信", account:"lin_qingyue_2026"} —— 数据在手边却填不进去。
+    // 但 social 里明明存着 {platform:"微信", account:"exampleuser_2026"} —— 数据在手边却填不进去。
     // 回落到 social 后，腾讯的「请输入微信号」立刻能填，且对所有站点通用。
     if (/微信号|微信\s*id|wechat|weixin/i.test(label)) {
       return basics.wechat || socialAccountOf(profile, /微信|wechat|weixin/i) || null;
@@ -5467,7 +5467,7 @@ function matchFieldCore(field, profile, indices) {
     const item = (profile.education || [])[idx] || {};
     // v0.7.0（腾讯）：GPA 两个框必须排在本块「最前面」。
     // 腾讯满绩框的 placeholder 是「请输入你所在院校的满绩绩点」，含「院校」二字，
-    // 若不提前拦截会被下面的 /学校|院校/ 规则填成学校名（实测填出「清华大学」）。
+    // 若不提前拦截会被下面的 /学校|院校/ 规则填成学校名（实测填出「示例学校」）。
     if (/满绩|满分绩点|gpa[\s\-_]*base|绩点.*(满|总)|所在院校.*绩点/i.test(label)) {
       return item.gpaBase || "";
     }
@@ -5526,8 +5526,16 @@ function matchFieldCore(field, profile, indices) {
     if (/开始|起始|入职|start/.test(label)) return item.start;
     if (/结束|截止|离职|end/.test(label)) return item.end;
     if (/起止|时间|年月|period/.test(label)) return formatRange(item.start, item.end);
-    if (/职责|内容|负责|工作描述|responsibilit|work content/.test(label))
+    // #561（2026-08-26 用户拍板）：职责/内容/负责/工作描述类字段 —— 板块内只有 1 个职责类框
+    // （Moka 实习「工作职责」单框）→ 合并 描述+职责+成果 三段填入；≥2 个框 → 只填职责，各归各的。
+    if (/职责|内容|负责|工作描述|responsibilit|work content/.test(label)) {
+      const dutyN = (__RFA_DUTY_COUNT__ && __RFA_DUTY_COUNT__.internships) || 0;
+      if (dutyN <= 1) {
+        const merged = [item.description, item.responsibilities, item.achievements].filter(Boolean).join("\n");
+        if (merged) return merged;
+      }
       return item.responsibilities || item.description;
+    }
     if (/业绩|成果|产出|achieve|result/.test(label)) return item.achievements;
     // v0.7.1 修复：档案 v2.0 没有 description 字段（拆成了 responsibilities + achievements），
     // 字节/蔚来的经历卡又只有一个笼统的「描述」框 —— 原来这里直接 return undefined，
@@ -5553,8 +5561,15 @@ function matchFieldCore(field, profile, indices) {
     if (/开始|起始|入职|start/.test(label)) return item.start;
     if (/结束|截止|离职|end/.test(label)) return item.end;
     if (/起止|时间|年月|period/.test(label)) return formatRange(item.start, item.end);
-    if (/职责|内容|负责|工作描述|responsibilit|work content/.test(label))
+    // #561：同 internships 单框合并逻辑（work 板块只有 1 个职责类框时同样合并三段）
+    if (/职责|内容|负责|工作描述|responsibilit|work content/.test(label)) {
+      const dutyN = (__RFA_DUTY_COUNT__ && __RFA_DUTY_COUNT__.work) || 0;
+      if (dutyN <= 1) {
+        const merged = [item.description, item.responsibilities, item.achievements].filter(Boolean).join("\n");
+        if (merged) return merged;
+      }
       return item.responsibilities || item.description;
+    }
     if (/业绩|成果|产出|achieve|result/.test(label)) return item.achievements;
     // v0.8.x：实习「描述」框兜底拼接三段（描述+职责+成果），与项目板块单框合并逻辑一致
     if (/描述|简介|经历|description/.test(label)) return [item.description, item.responsibilities, item.achievements].filter(Boolean).join(" ");
@@ -5582,13 +5597,20 @@ function matchFieldCore(field, profile, indices) {
       const pj = (profile.portfolio || [])[indices.projects];
       return item.link || (pj && pj.link) || null;
     }
-    // v0.8.x：项目「描述/职责/成果」单框合并策略（用户已确认）。
-    // 多框站点若存在专门的「项目职责 / 项目成果」框则各自对号入座；
-    // 单框站点（项目描述 / 项目内容 / 工作职责 / 经历描述 等无论叫什么）一律把 描述+职责+成果 合并填入，保证最完整。
+    // #561（2026-08-26 用户拍板）：项目「描述/职责/成果」——多框分开、单框合并。
+    // 用户原话：项目经历页有「项目描述」和「项目中的职责」两个框就该分开填（描述←description、职责←responsibilities），
+    // 不能全填成一样。历史回归根因：旧正则只认 /项目职责/（匹配不到「项目中的职责」，中间隔着"中的"），
+    // 它和「项目描述」一起滑进最后的兜底 /描述|...|职责|.../ 都返回 _pj(合并段) → 两个框一模一样。
+    // 修复：板块内职责/描述类字段 ≥2 个 → 各自对号入座；只有 1 个 → 合并 描述+职责+成果 保证完整。
     const _pj = [item.description, item.responsibilities, item.achievements].filter(Boolean).join("\n");
-    if (/项目职责/.test(label)) return item.responsibilities || _pj;
-    if (/项目成果/.test(label)) return item.achievements || _pj;
-    if (/描述|简介|背景|经历|内容|职责|负责|成果|产出|业绩|description|responsibilit|achieve|result/.test(label)) return _pj;
+    const pDutyN = (__RFA_DUTY_COUNT__ && __RFA_DUTY_COUNT__.projects) || 0;
+    const pSingleBox = pDutyN <= 1; // 整个项目板块只有 1 个职责/描述类框 → 合并
+    if (/项目.*职责|职责/.test(label)) return pSingleBox ? _pj : item.responsibilities || _pj;
+    if (/项目成果|成果/.test(label)) return pSingleBox ? _pj : item.achievements || _pj;
+    if (/项目描述|项目内容|项目介绍|描述|简介|背景|经历|内容|description/i.test(label))
+      return pSingleBox ? _pj : item.description || _pj;
+    if (/负责|产出|业绩|achieve|result/.test(label)) return pSingleBox ? _pj : _pj;
+    return null;
   }
 
   // 语言能力
@@ -6103,6 +6125,20 @@ function fallbackMap(fields, profile) {
 
   // v0.7.1：先落定「本页有哪些板块」，matchField 里的跨板块去重（work vs internships）要用。
   __RFA_PAGE_SECTIONS = new Set(fields.map((f) => f.section).filter(Boolean));
+
+  // #561（2026-08-26 用户拍板）：职责/描述类字段「单框合并、多框分开」。
+  // 统计各板块内职责/描述类字段数量：只有 1 个框（如 Moka 实习「工作职责」、单框「项目描述」）
+  // → 把 描述+职责+成果 三段合并填入保证完整；≥2 个框 → 各自对号入座（职责→responsibilities、描述→description、成果→achievements）。
+  // 历史回归根因：5529 行实习「职责」框只 return responsibilities 不合并；5591 行项目兜底把所有描述/职责/成果
+  // 类 label 一律 return _pj(合并段)，导致「项目中的职责」（不匹配 /项目职责/，中间隔"中的"）与「项目描述」填成一样。
+  __RFA_DUTY_COUNT__ = {};
+  const DUTY_LABEL_RE = /描述|职责|内容|负责|成果|业绩|产出|achieve|result|responsibilit|work content|description/i;
+  fields.forEach((f) => {
+    const s = f.section || "unknown";
+    if ((s === "internships" || s === "work" || s === "projects") && DUTY_LABEL_RE.test(f.label || "")) {
+      __RFA_DUTY_COUNT__[s] = (__RFA_DUTY_COUNT__[s] || 0) + 1;
+    }
+  });
   // v0.8.40（A1 规格）：语言条目一律按语种去重、只填精通程度，不再探测「考试/分数槽位」。
   // 旧版用扫描到的标签判定是否去重的逻辑已废弃（与规格冲突且飞书系易误判）。
 
@@ -6748,6 +6784,7 @@ async function expandSection(section, container, sectionName, needed, sections) 
 // 由 fallbackMap（按扫描到的字段）与 expandExperienceSections（按 detectSections）双向写入，
 // 保证展开阶段和填值阶段看到的是同一份板块清单。
 let __RFA_PAGE_SECTIONS = new Set();
+let __RFA_DUTY_COUNT__ = {}; // #561：各板块职责/描述类字段数（fallbackMap 开头统计，matchFieldCore 读取判断单框合并/多框分开）
 function pageHasSection(name) {
   return __RFA_PAGE_SECTIONS.has(name);
 }
@@ -9745,6 +9782,20 @@ async function runAutofill(profile, fileVault, options, works) {
     return { ok: false, error: "no profile" };
   }
 
+  // ── #551（2026-08-21）：前程无忧 ATS 系统（xyz.51job.com/consumer/pc/resume/index）──
+  // 「自己点加号 + 确认」的弹窗式简历编辑器，模型与通用 inline 展开完全不同，
+  // 整段走专属适配器。仅 51job 域名进入；其它站点完全不受影响（下方通用流程照旧）。
+  if (isQiancheng()) {
+    rfaLog({ act: "qiancheng-dispatch" });
+    try {
+      return await runQianchengAdapter(profile, fileVault, options, works);
+    } catch (e) {
+      rfaLog({ act: "qiancheng-fatal", err: String((e && e.stack) || e) });
+      showToast("前程无忧适配器执行异常，已停止（未做任何破坏性填写）", "err");
+      return { ok: false, error: "qiancheng adapter exception: " + e };
+    }
+  }
+
   // v0.8.13（08-21 用户反馈「填充卡死/下拉点不开」）：字节新增 AI 助手浮层
   // （campus-ai-assistant__fab-popover「👋 Hi，有什么可以帮你？」）常驻页面右上，
   // 挡住表单点击 —— 期望工作地点等下拉永远打不开 → fillCombobox 卡死 → 整个投递卡住。
@@ -9861,6 +9912,8 @@ async function runAutofill(profile, fileVault, options, works) {
   }
   if (fields.length === 0) {
     showToast("当前页面没有找到可填写的表单字段", "err");
+    // #552：提前退出也停观察器，不留长期挂载
+    try { stopParseOverlayObserver(); } catch (e) {}
     return { ok: false, error: "no fields" };
   }
 
@@ -10093,6 +10146,8 @@ async function runAutofill(profile, fileVault, options, works) {
       const sectionHits = {};
       if (total === 0) {
         showToast(`识别到 ${fields.length} 个字段，但无法匹配任何可填内容。`, "err");
+        // #552：提前退出也停观察器，不留长期挂载
+        try { stopParseOverlayObserver(); } catch (e) {}
         resolve({ ok: false, error: "no mappings", scanned: fields.length });
         return;
       }
@@ -10260,6 +10315,8 @@ async function runAutofill(profile, fileVault, options, works) {
       );
       // 不再在填充中途弹窗（会过早叫回）。完成信号留给跑批脚本在审计后统一弹窗+响铃。
       try { window.__RFA_DONE__ = { filled, total, unfilled: unfilledList.length + (fileManual ? 1 : 0), source }; } catch (e) {}
+      // #552 铁律（2026-08-26）：填完一轮即死，立即停掉弹窗观察器，不再长期挂载反应。
+      try { stopParseOverlayObserver(); } catch (e) {}
       resolve({
         ok: true,
         uploadPending: !!fileManual,
@@ -10434,10 +10491,7 @@ function ensureBall() {
     ball.style.top = (rfaCardY - 28) + "px";
     // 大面板：钉在小球左下（小球右上角压大面板右上角），始终位于小球下方
     if (rfaPanelEl && rfaPanelEl.style.display !== "none") {
-      const pw = rfaPanelEl.offsetWidth || 440;
-      rfaPanelEl.style.left = (rfaCardX + RFA_CARD_W - pw) + "px";
-      rfaPanelEl.style.top = rfaCardY + "px";
-      rfaPanelEl.style.right = "auto";
+      clampPanelToViewport(rfaPanelEl);
     }
   }
   function clampPos() {
@@ -10592,16 +10646,37 @@ function rfaInitLauncher() {
   else document.addEventListener("DOMContentLoaded", go, { once: true });
 }
 
+function clampPanelToViewport(panelEl) {
+  // #559（2026-08-26）：面板定位曾直接用 rfaCardX + RFA_CARD_W - pw，球被 clamp 到
+  // 左缘 40px 时该式恒为负（40+280-440=-120），面板永远卡在左下角只露 1/4、拖不动。
+  // 这里把面板夹紧在视口内：left/top 均取 [10, 视口-面板尺寸-10]，绝不超出屏幕。
+  try {
+    const pw = (panelEl.offsetWidth || 440);
+    const ph = (panelEl.offsetHeight || 660);
+    let left = rfaCardX + RFA_CARD_W - pw;
+    let top = rfaCardY;
+    const maxL = Math.max(10, window.innerWidth - pw - 10);
+    const maxT = Math.max(10, window.innerHeight - ph - 10);
+    left = Math.min(Math.max(left, 10), maxL);
+    top = Math.min(Math.max(top, 10), maxT);
+    panelEl.style.left = left + "px";
+    panelEl.style.top = top + "px";
+    panelEl.style.right = "auto";
+    return { left, top };
+  } catch (e) { return null; }
+}
+
 function openFloatPanel() {
+  // #559：先恢复小球（作为面板的拖动把手）。用户此前点 × 关过球的话，
+  // 球是 hidden 的 → 面板出现但无把手 → 「拖不动 + 小球不见了」。
+  // 打开面板时强制回到球形态（卡片收起），球作为把手可拖动、可再收起。
+  try { rfaSetHidden(false); } catch (e) {}
   // 已存在则重新显示并置顶
   if (rfaPanelEl && document.body.contains(rfaPanelEl)) {
     rfaPanelEl.style.display = "flex";
     rfaPanelEl.style.zIndex = "2147483646";
-    // 重新钉到小球左下（小球位置可能已变化）
-    const pw = rfaPanelEl.offsetWidth || 440;
-    rfaPanelEl.style.left = (rfaCardX + RFA_CARD_W - pw) + "px";
-    rfaPanelEl.style.top = rfaCardY + "px";
-    rfaPanelEl.style.right = "auto";
+    // 重新钉到小球左下（小球位置可能已变化），并夹紧在视口内
+    clampPanelToViewport(rfaPanelEl);
     // 若被收起了，重新加载 iframe 保证数据最新
     const f = rfaPanelEl.querySelector("iframe");
     if (f && !f.src) f.src = chrome.runtime.getURL("popup.html") + "?mode=float&t=" + Date.now();
@@ -10663,11 +10738,8 @@ function openFloatPanel() {
 
   document.body.appendChild(panel);
   rfaPanelEl = panel;
-  // 钉在小球左下（小球永远在最上层，大面板位于其下方）
-  const pw = panel.offsetWidth || 440;
-  panel.style.left = (rfaCardX + RFA_CARD_W - pw) + "px";
-  panel.style.top = rfaCardY + "px";
-  panel.style.right = "auto";
+  // 钉在小球左下（小球永远在最上层，大面板位于其下方），并夹紧在视口内（#559）
+  clampPanelToViewport(panel);
 }
 
 /* ================= 清理教育板块多余的空白卡片 ================= */
@@ -11250,7 +11322,7 @@ async function cleanupEmptyEducationCards(profile) {
 // 【2026-08-07 事故复盘 · v0.7.7】旧写法在**整个 document** 里找文字含「删除/确定」
 // 且长度 ≤6 的按钮就点。腾讯每张教育卡自带一颗「删除学历」按钮（4 个字、可见、
 // 是真 <button>），于是在「压根没有确认框」的场景下，它顺手点掉了页面上第一张卡的
-// 删除按钮 —— 实测把已填好的「硕士 · 清华大学」整段教育经历删没了，属于直接丢数据。
+// 删除按钮 —— 实测把已填好的「硕士 · 示例学校」整段教育经历删没了，属于直接丢数据。
 // 修正两点：① 只在**真正的模态对话框容器内部**找按钮；② 文字必须精确等于确认词，
 // 「删除学历 / 删除经历」这种带宾语的一律不认（那是页面按钮，不是确认框按钮）。
 const CONFIRM_DIALOG_SEL = [
@@ -11354,19 +11426,15 @@ async function autoRestoreWorkAttachments() {
 }
 
 function maybeAutoRestoreWorkAttachments() {
-  // 只在招聘/简历编辑类页面启动，避免在普通网页上跑
-  if (!/resume|job|campus|position|apply|recruitment|feishu\.cn|bytedance|zhaopin|lagou|nowcoder|boss|mokahr|hire|alibaba|netease|163\.com|tencent|qq\.com|baidu|pinduoduo|jd\.com|xiaomi|kuaishou|huawei|antgroup|ctrip|xiaohongshu|didiglobal|bilibili/i.test(location.href)) return;
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", () => {
-      setTimeout(autoRestoreWorkAttachments, 1800);
-      setTimeout(startParseOverlayObserver, 500);
-    });
-  } else {
-    setTimeout(autoRestoreWorkAttachments, 1800);
-    setTimeout(startParseOverlayObserver, 500);
-  }
+  // #552 铁律（2026-08-26 用户拍板）：插件跑完一轮即死，绝不自动反应。
+  // 页面加载自动上传作品集附件曾在用户「点保存后」随页面刷新再次触发，
+  // 把存储里的附件重新塞进文件框（真实事故：林清越测试文件覆盖用户文件）。
+  // 作品集附件只允许在用户主动点「一键填充」时由 runAutofill 上传，
+  // 因此本函数不再被自动调用；保留定义仅为兼容旧引用，永不自动执行。
+  return;
 }
-maybeAutoRestoreWorkAttachments();
+// #552：不再自动调用 maybeAutoRestoreWorkAttachments()（页面加载自动传附件已禁用）
+// maybeAutoRestoreWorkAttachments();
 
 // ===== 自动化调试钩子（远程调试用，可安全删除） =====
 // 等价于在插件面板里点「一键填充」，但由外部（Playwright / 控制台）触发。
@@ -11566,6 +11634,8 @@ document.addEventListener("__RFA_UPLOAD__", function () {
         if (att && _pfFirst) { items.push({ cat: "portfolio", data: att, workIndex: 0 }); _pfFirst = false; }
       });
       const manual = await handleFileUploads(items);
+      // #552：调试钩子跑完也即停观察器，不留长期挂载
+      try { stopParseOverlayObserver(); } catch (e) {}
       document.dispatchEvent(
         new CustomEvent("__RFA_UPLOAD_RESULT__", { detail: { ok: true, manual: manual, n: items.length } })
       );
@@ -11741,7 +11811,7 @@ document.addEventListener("__RFA_GETSTORAGE__", function (e) {
 // 构建戳：CDP 可直接读 document.documentElement.dataset.rfaBuild，
 // 用来确认「页面上跑的到底是不是我刚改的这版 content.js」。
 // 之前多次出现「改完码没重载扩展、对着旧码调了半天」的浪费，加这一行成本极低。
-try { document.documentElement.dataset.rfaBuild = "20260817-certfix1"; } catch (e) {}
+try { document.documentElement.dataset.rfaBuild = "20260826-r556-560"; } catch (e) {}
 
 // ============ 百度抓取模式（读优先，不依赖 CDP 读页面） ============
 // 百度 ATS 检测到 CDP Runtime.enable 会自毁 about:blank，所以不能用 CDP 读。
@@ -11838,3 +11908,157 @@ else document.addEventListener('DOMContentLoaded', rfaInjectCaptureBtn);
 
 // 悬浮小球入口：页面载入即常驻一个小圆球，点它展开 / 收起大面板
 rfaInitLauncher();
+
+// >>> #551 前程无忧 ATS 适配器 BEGIN (2026-08-26 重写) >>>
+// =====================================================================
+// 前程无忧招聘系统（xyz.51job.com/consumer/pc/resume/index?ctmid=...）
+// 真机 DOM 实测（2026-08-26，CDP 逐模块探测）：
+//   1) 页面不是「点加号→el-dialog 弹窗」模型！已展开板块（基本信息/教育经历/实习经验）
+//      就是标准 Element UI inline 表单（.el-form-item__label + .el-input__inner），
+//      通用 scanFields/fallbackMap/fillFieldAsync 完全可以直接填。
+//   2) 收起板块（在校实践/项目、在校期间获得荣誉、自我评价）header 里有
+//      <span class="custom-button">添加/编辑</span>，点它原地展开为 inline 表单（无弹窗）。
+//   3) 「语言能力」模块默认就有 inline 表单（英语水平等），field-list-box 是附加列表。
+//   4) 全页无 el-dialog（旧版适配器假设弹窗模型，导致"一个都填不上"）。
+// 重写策略：展开所有收起板块 → 调通用扫描/映射/填充 → 不点任何「确认」（inline 表单）。
+// 铁律（用户 2026-08-21）：宁愿不填错——映射不确定就放弃该字段，绝不误填。
+// 仅 51job 域名进入，其它站点完全走原流程。
+// =====================================================================
+function isQiancheng() {
+  return /51job\.com/i.test(location.hostname);
+}
+
+// 51job 板块标题 → 档案字段。onlyExpand=true 表示单值板块只需展开一次；数组板块按档案条数建卡。
+const QC_SECTIONS = [
+  { title: "基本信息", key: "basic", many: false },
+  { title: "教育经历", key: "education", many: true },
+  { title: "实习经验", key: "internships", many: true },
+  { title: "在校实践经验/项目经验", key: "campus", many: true },
+  { title: "语言能力", key: "languages", many: true },
+  { title: "在校期间获得荣誉", key: "awards", many: true },
+  { title: "自我评价", key: "selfEval", many: false },
+];
+
+// 找板块根容器：标题文字精确命中（.resume-module 内 .title）
+function qcFindSectionBlock(title) {
+  const mods = Array.from(document.querySelectorAll(".resume-module"));
+  for (const m of mods) {
+    const t = (m.querySelector(".title") || {}).innerText || "";
+    if (t.trim() === title.trim() || (title === "在校实践经验/项目经验" && t.indexOf("在校实践") >= 0)) {
+      if (isVisible(m)) return m;
+    }
+  }
+  // 兜底：标题包含匹配（兼容标题带提示文字的情况）
+  for (const m of mods) {
+    const t = (m.querySelector(".title") || {}).innerText || "";
+    if (t.indexOf(title) >= 0 && isVisible(m)) return m;
+  }
+  return null;
+}
+
+// 板块内找「添加/编辑」按钮：优先 .custom-button（span），兜底文字匹配
+function qcFindAddButton(block) {
+  if (!block) return null;
+  const cb = Array.from(block.querySelectorAll(".custom-button")).filter(function (el) { return isVisible(el); });
+  if (cb.length) return cb[0];
+  // 兜底：按钮类元素 + 文字匹配
+  const all = Array.from(block.querySelectorAll("button, [role=button], span, div, a"))
+    .filter(function (el) { return isVisible(el) && /添加|编辑|新建|新增/.test(getText(el)); });
+  if (!all.length) return null;
+  function isCtrl(el) { return /^(button|a|input)$/i.test(el.tagName) || (el.getAttribute && el.getAttribute("role") === "button"); }
+  const controls = all.filter(isCtrl);
+  const cands = controls.length ? controls : all;
+  const leaf = cands.filter(function (el) { return !cands.some(function (o) { return o !== el && el.contains(o); }); });
+  const pick = leaf.length ? leaf : cands;
+  return pick[0] || null;
+}
+
+// 展开一个板块（点 custom-button），最多等 ~8s。返回 true=已展开/本就展开。
+async function qcExpandSection(block) {
+  if (!block) return false;
+  // 已有可见可填字段 → 已展开，直接返回
+  const hasField = Array.from(block.querySelectorAll("input, textarea, select")).some(function (el) {
+    const r = el.getBoundingClientRect(); return r.width > 0 && el.type !== "hidden" && el.type !== "file";
+  });
+  if (hasField) return true;
+  const btn = qcFindAddButton(block);
+  if (!btn) return false;
+  rfaLog({ act: "qc-expand-click", title: ((block.querySelector(".title") || {}).innerText || "").slice(0, 16) });
+  // 滚动到按钮位置，确保可见可点
+  try { btn.scrollIntoView({ block: "center" }); } catch (e) {}
+  await sleep(300);
+  simulateClick(btn);
+  // 等字段出现
+  const deadline = Date.now() + 8000;
+  while (Date.now() < deadline) {
+    await sleep(400);
+    const has = Array.from(block.querySelectorAll("input, textarea, select")).some(function (el) {
+      const r = el.getBoundingClientRect(); return r.width > 0 && el.type !== "hidden" && el.type !== "file";
+    });
+    if (has) return true;
+  }
+  return false;
+}
+
+// 展开所有收起板块（在校实践/荣誉/自我评价等）
+async function qcExpandAllSections() {
+  let expanded = 0;
+  for (const sec of QC_SECTIONS) {
+    try {
+      const block = qcFindSectionBlock(sec.title);
+      if (!block) { rfaLog({ act: "qc-no-block", title: sec.title }); continue; }
+      const ok = await qcExpandSection(block);
+      if (ok) expanded++;
+      rfaLog({ act: "qc-expand-result", title: sec.title, ok: ok });
+    } catch (e) {
+      rfaLog({ act: "qc-expand-err", title: sec.title, err: String(e) });
+    }
+  }
+  rfaLog({ act: "qc-expand-all-done", expanded: expanded });
+  return expanded;
+}
+
+async function runQianchengAdapter(profile, fileVault, options, works) {
+  showToast("前程无忧：正在展开板块并填充…", "wait");
+  rfaLog({ act: "qc-begin", host: location.hostname });
+  // 1) 先展开所有收起板块
+  try { await qcExpandAllSections(); } catch (e) { rfaLog({ act: "qc-expand-fatal", err: String(e) }); }
+  await sleep(600); // 等 Vue 渲染稳定
+  // 2) 复用通用流程：扫描 → 映射 → 填充
+  let fields = scanFields();
+  if (!fields || !fields.length) {
+    fields = getAllFillableEls() || [];
+  }
+  rfaLog({ act: "qc-scan", n: fields.length });
+  if (!fields.length) {
+    showToast("前程无忧：未扫描到可填字段（可能未登录或页面未加载）", "err");
+    return { ok: false, filled: 0, report: [], error: "no fields" };
+  }
+  let mappings = [];
+  try { mappings = fallbackMap(fields, profile) || []; } catch (e) { rfaLog({ act: "qc-map-err", err: String(e) }); }
+  // 过滤：无值不填；校验不通过不填（铁律：宁愿不填错）
+  mappings = mappings.filter(function (m) {
+    if (m.value === undefined || m.value === null || m.value === "") return false;
+    const f = fields.find(function (x) { return x.idx === m.idx; });
+    return f && validateValueForField(m.value, f);
+  });
+  // 去重
+  const seenQc = new Set();
+  mappings = mappings.filter(function (m) { if (seenQc.has(m.idx)) return false; seenQc.add(m.idx); return true; });
+  rfaLog({ act: "qc-map", total: fields.length, mapped: mappings.length });
+  let filled = 0;
+  for (const m of mappings) {
+    const el = document.querySelector("[" + ATTR + '="' + m.idx + '"]');
+    if (!el) continue;
+    try {
+      const f = fields.find(function (x) { return x.idx === m.idx; });
+      const ok = await fillFieldGuarded(el, m.value, f);
+      highlight(el, ok ? "ok" : "warn");
+      if (ok) filled++;
+    } catch (e) { rfaLog({ act: "qc-fill-err", idx: m.idx, err: String(e) }); }
+  }
+  // 3) 标黄查漏（未填字段统一黄框）
+  try { repaintWarnByRealState("qc-done"); } catch (e) {}
+  showToast("前程无忧填写完成（" + filled + "/" + mappings.length + " 字段），请人工核对", "ok");
+  return { ok: true, filled: filled, report: { scanned: fields.length, mapped: mappings.length } };
+}
