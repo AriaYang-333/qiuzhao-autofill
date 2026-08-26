@@ -5820,7 +5820,17 @@ function matchFieldCore(field, profile, indices) {
     // v0.7.1 修复：档案 v2.0 没有 description 字段（拆成了 responsibilities + achievements），
     // 字节/蔚来的经历卡又只有一个笼统的「描述」框 —— 原来这里直接 return undefined，
     // 三张实习卡的描述全是空的。改为拼接职责+成果兜底。
-    if (/描述|简介|经历|description/.test(label)) return item.description || joinExpDesc(item);
+    // #569（2026-08-27 蔚来验证发现）：单框合并只覆盖了「职责」类 label，漏了「描述」类——
+    // 蔚来实习经历只有一个「描述」框，实际只填了 description 一段（30字符），没合并职责+成果。
+    // 修复：描述框同样套用单框合并逻辑（dutyN<=1 时合并三段），≥2 框时各归各的。
+    if (/描述|简介|经历|description/.test(label)) {
+      const dutyN = (__RFA_DUTY_COUNT__ && __RFA_DUTY_COUNT__.internships) || 0;
+      if (dutyN <= 1) {
+        const merged = [item.description, item.responsibilities, item.achievements].filter(Boolean).join("\n");
+        if (merged) return merged;
+      }
+      return item.description || joinExpDesc(item);
+    }
   }
 
   // 工作经历（秋招通常只有实习，若页面只有“工作经历”也先用实习数据填充）
@@ -6423,13 +6433,27 @@ function fallbackMap(fields, profile) {
   // 历史回归根因：5529 行实习「职责」框只 return responsibilities 不合并；5591 行项目兜底把所有描述/职责/成果
   // 类 label 一律 return _pj(合并段)，导致「项目中的职责」（不匹配 /项目职责/，中间隔"中的"）与「项目描述」填成一样。
   __RFA_DUTY_COUNT__ = {};
-  const DUTY_LABEL_RE = /描述|职责|内容|负责|成果|业绩|产出|achieve|result|responsibilit|work content|description/i;
+  // #569（2026-08-27 蔚来验证修正）：原统计把整板块的职责/描述类字段数加起来——
+  // 3 张实习卡 × 1 个描述框 = 3 → dutyN>1 误判"多框"→ 描述框只填 description。
+  // 正确语义是「板块内字段的种类」：只有描述类（无职责类）或只有职责类（无描述类）= 单类框 → 合并三段；
+  // 描述类 + 职责类并存 = 多类框 → 各归各的。
+  __RFA_DUTY_KINDS__ = {};
+  const DUTY_DESC_RE = /描述|简介|description/i;
+  const DUTY_DUTY_RE = /职责|内容|负责|工作描述|responsibilit|work content|成果|业绩|产出|achieve|result/i;
   fields.forEach((f) => {
     const s = f.section || "unknown";
-    if ((s === "internships" || s === "work" || s === "projects") && DUTY_LABEL_RE.test(f.label || "")) {
-      __RFA_DUTY_COUNT__[s] = (__RFA_DUTY_COUNT__[s] || 0) + 1;
-    }
+    if (s !== "internships" && s !== "work" && s !== "projects") return;
+    const l = f.label || "";
+    if (!__RFA_DUTY_KINDS__[s]) __RFA_DUTY_KINDS__[s] = { hasDesc: false, hasDuty: false };
+    if (DUTY_DESC_RE.test(l)) __RFA_DUTY_KINDS__[s].hasDesc = true;
+    if (DUTY_DUTY_RE.test(l)) __RFA_DUTY_KINDS__[s].hasDuty = true;
   });
+  // 兼容旧字段名：单框判断统一用 hasDuty/hasDesc
+  __RFA_DUTY_COUNT__ = { internships: 0, work: 0, projects: 0 };
+  for (const s in __RFA_DUTY_KINDS__) {
+    const k = __RFA_DUTY_KINDS__[s];
+    __RFA_DUTY_COUNT__[s] = (k.hasDesc ? 1 : 0) + (k.hasDuty ? 1 : 0);
+  }
   // v0.8.40（A1 规格）：语言条目一律按语种去重、只填精通程度，不再探测「考试/分数槽位」。
   // 旧版用扫描到的标签判定是否去重的逻辑已废弃（与规格冲突且飞书系易误判）。
 
@@ -12105,7 +12129,7 @@ document.addEventListener("__RFA_GETSTORAGE__", function (e) {
 // 构建戳：CDP 可直接读 document.documentElement.dataset.rfaBuild，
 // 用来确认「页面上跑的到底是不是我刚改的这版 content.js」。
 // 之前多次出现「改完码没重载扩展、对着旧码调了半天」的浪费，加这一行成本极低。
-try { document.documentElement.dataset.rfaBuild = "20260826-r556-570"; } catch (e) {}
+try { document.documentElement.dataset.rfaBuild = "20260826-r556-572"; } catch (e) {}
 
 // ============ 百度抓取模式（读优先，不依赖 CDP 读页面） ============
 // 百度 ATS 检测到 CDP Runtime.enable 会自毁 about:blank，所以不能用 CDP 读。
